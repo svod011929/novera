@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+!.env.vps.example
+.git
+.gitignore
+.pytest_cache
+.ruff_cache
+__pycache__
+*.py[cod]
+data
+backups
+secrets/*
+!secrets/README.md
+tests
+requirements-dev.txt

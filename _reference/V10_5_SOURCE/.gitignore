@@ -1,0 +1,9 @@
+.env
+data/
+backups/
+secrets/*
+!secrets/README.md
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]

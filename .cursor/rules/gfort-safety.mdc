@@ -1,0 +1,20 @@
+---
+description: Critical safety and delivery rules for the GFORT financial Telegram Mini App
+alwaysApply: true
+---
+
+# GFORT safety rule
+
+- Read `START_HERE.md`, `AGENTS.md`, `docs/MASTER_PLAN.md`, and `TASK_BOARD.md` before editing.
+- Never reveal, copy, log, screenshot, commit, or place in chat: seed phrase, private key, bot token, private RPC/WSS key, SSH credentials, `.env`, or `secrets` contents.
+- Never modify `_reference/**`.
+- Never deploy to production, run an installer, use `--fresh`, execute destructive SQL, delete data/backups/releases, send real payouts, or message real users without explicit owner approval.
+- Treat the existing financial formulas, payout/deposit state machines, nonce flow, ledger semantics, referral percentages, principal handling, invoice matching, network, token contract, and existing records as immutable unless the owner gives a separate written decision.
+- Before changing code, trace the affected data flow and record scope, files, API/DB impact, acceptance criteria, tests, risks, and rollback.
+- Each financial or privileged admin mutation must have server-side authorization, strict validation, atomicity, idempotency, immutable audit data, and safe retry behavior.
+- Preserve current data and backward compatibility. Prefer additive, reversible migrations.
+- Work in small isolated iterations. After each iteration record exact changed files, test results, screenshots, remaining risks, and rollback in `_cursor_output`.
+- Russian localization must cover toast, modal, validation, empty, loading, error, offline, and API-facing messages when RU is selected.
+- Validate Telegram mobile behavior at 360, 390, and 430 px, safe areas, Back button, software keyboard, slow network, and repeated taps.
+- A P0 or P1 finding blocks the release. Final review must be performed in a new clean Cursor session using the exact diff and release candidate.
+

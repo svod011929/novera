@@ -1,0 +1,89 @@
+# GFORT V10.5 Safe Deploy: application image and persistent state paths are release-independent.
+# GFORT V10.6 keeps the same staged deployment and rollback architecture.
+name: delta-miniapp
+
+services:
+  delta:
+    image: ${GFORT_APP_IMAGE:-gfort-app:current}
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8080"
+    volumes:
+      - ${GFORT_DATA_DIR:-./data}:/app/data
+      - ${GFORT_BACKUPS_DIR:-./backups}:/app/backups
+    secrets:
+      - bot_token
+      - bsc_rpc_url
+      - bsc_wss_url
+      - seed_phrase
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    networks:
+      - backend
+      - egress
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      delta:
+        condition: service_healthy
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ${GFORT_CADDYFILE:-./deploy/Caddyfile.vps}:/etc/caddy/Caddyfile:ro
+      - ${GFORT_FRONTEND_DIR:-./frontend}:/srv/delta-frontend:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    networks:
+      - frontend
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+networks:
+  frontend:
+  backend:
+    internal: true
+  egress:
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  bot_token:
+    file: ${GFORT_SECRETS_DIR:-./secrets}/bot_token.txt
+  bsc_rpc_url:
+    file: ${GFORT_SECRETS_DIR:-./secrets}/bsc_rpc_url.txt
+  bsc_wss_url:
+    file: ${GFORT_SECRETS_DIR:-./secrets}/bsc_wss_url.txt
+  seed_phrase:
+    file: ${GFORT_SECRETS_DIR:-./secrets}/seed_phrase.txt

@@ -1,0 +1,6 @@
+GFORT V10.6 ADMIN CONTROLS
+base: V10.5 Safe Deploy + V10.4 Safety
+admin-controls: referral-balance, manual-investments, referral-level-access
+release-layout: /opt/gfort/releases/<release>
+persistent-state: /opt/gfort/state
+compatibility-link: /opt/delta -> /opt/gfort/current

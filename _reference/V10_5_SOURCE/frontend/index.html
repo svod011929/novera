@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#090a0d">
+  <title>GFORT</title>
+  <link rel="stylesheet" href="/assets/styles.css?v=gfort-v10-notifications-3">
+  <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+</head>
+<body>
+  <div class="backdrop-glow glow-one"></div>
+  <div class="backdrop-glow glow-two"></div>
+  <div class="backdrop-glow glow-three"></div>
+
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <button id="brandBtn" class="brand-block" type="button" aria-label="GFORT">
+        <span class="brand-icon">G</span>
+        <span><strong>GFORT</strong><small>Mini App</small></span>
+      </button>
+      <div class="top-actions">
+        <button id="notificationsBtn" class="notification-btn" type="button" aria-label="Уведомления"><span class="notification-bell">🔔</span><span id="notificationBadge" class="notification-badge hidden">0</span></button>
+        <button id="languageBtn" class="outline-chip" type="button"><span id="languageShort">RU</span><span class="chev">⌄</span></button>
+        <button id="profileBtn" class="avatar-btn" type="button" aria-label="Профиль">G</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section id="sessionBanner" class="session-banner hidden">
+        <div><strong data-i18n="sessionTitle">Сессия Telegram устарела</strong><p data-i18n="sessionText">Закройте Mini App и откройте его снова из бота.</p></div>
+        <button id="closeMiniApp" class="compact-btn" type="button" data-i18n="close">Закрыть</button>
+      </section>
+
+      <section id="view-home" class="view active">
+        <article class="hero-card panel">
+          <div class="hero-topline"><span class="live-dot"></span><span id="networkState">BSC MAINNET</span><span class="hero-spacer"></span><span id="accountState" class="status-pill" data-i18n="connecting">Подключение</span></div>
+          <div class="hero-copy">
+            <p class="overline" data-i18n="dashboard">ЛИЧНЫЙ КАБИНЕТ</p>
+            <h1><span data-i18n="welcome">Добро пожаловать</span><br><em id="heroName">GFORT</em></h1>
+            <p id="heroSubtitle" class="hero-subtitle" data-i18n="heroSubtitle">Ваши активы, выплаты и команда в одном месте.</p>
+          </div>
+          <div class="hero-balance">
+            <span data-i18n="activeAssets">Сейчас в работе</span>
+            <strong><span id="activePrincipal">0.00</span> <small>USDT</small></strong>
+          </div>
+        </article>
+
+        <div class="stats-grid">
+          <article class="stat-card panel"><span data-i18n="totalDeposited">Всего пополнено</span><strong id="totalDeposited">0.00</strong><small>USDT</small></article>
+          <article class="stat-card panel"><span data-i18n="totalPaid">Получено выплат</span><strong id="totalPaid">0.00</strong><small>USDT</small></article>
+          <article class="stat-card panel"><span data-i18n="accountBalance">Баланс аккаунта</span><strong id="accountBalance">0.00</strong><small>USDT</small></article>
+          <article class="stat-card panel"><span data-i18n="team">Команда</span><strong id="teamCount">0</strong><small data-i18n="people">участников</small></article>
+          <article class="stat-card panel"><span data-i18n="partnerIncome">Партнёрский доход</span><strong id="refIncome">0.00</strong><small>USDT</small></article>
+        </div>
+
+        <article class="panel action-panel">
+          <div class="section-row"><div><p class="overline" data-i18n="quickActions">БЫСТРЫЕ ДЕЙСТВИЯ</p><h2 data-i18n="manageFunds">Управление</h2></div></div>
+          <div class="action-grid">
+            <button class="action-tile" type="button" data-go="wallet"><span>↧</span><strong data-i18n="deposit">Пополнить</strong><small data-i18n="bep20">USDT · BEP-20</small></button>
+            <button class="action-tile" type="button" data-go="assets"><span>◈</span><strong data-i18n="assets">Активы</strong><small data-i18n="activeAndCompleted">активные и завершённые</small></button>
+            <button class="action-tile" type="button" data-go="team"><span>◎</span><strong data-i18n="referrals">Рефералы</strong><small data-i18n="fiveLevels">5 уровней</small></button>
+            <button class="action-tile" type="button" data-go="history"><span>≡</span><strong data-i18n="history">История</strong><small data-i18n="allOperations">все операции</small></button>
+          </div>
+        </article>
+
+        <article class="panel terms-preview">
+          <div><p class="overline" data-i18n="currentTerms">ТЕКУЩИЕ УСЛОВИЯ</p><h2 id="termsHeadline">—</h2></div>
+          <div class="mini-terms">
+            <div><span data-i18n="minimum">Минимум</span><strong id="termMin">—</strong></div>
+            <div><span data-i18n="period">Период</span><strong id="termDays">—</strong></div>
+            <div><span data-i18n="dailyRate">Ставка/день</span><strong id="termRate">—</strong></div>
+          </div>
+          <p class="fineprint" data-i18n="termsFineprint">Фактические параметры отображаются из текущей конфигурации сервиса.</p>
+        </article>
+
+        <article class="panel profit-calculator" id="profitCalculator">
+          <div class="form-heading"><span class="form-icon">%</span><div><strong data-i18n="profitCalculator">Калькулятор прибыли</strong><small data-i18n="profitCalculatorHint">Расчёт по текущей ставке и сроку GFORT.</small></div></div>
+          <label class="input-label" for="profitCalcAmount" data-i18n="investmentAmount">Сумма депозита</label>
+          <div class="input-shell amount-shell"><input id="profitCalcAmount" type="number" inputmode="decimal" min="1" step="0.01" placeholder="100"><span class="unit">USDT</span></div>
+          <div id="profitCalcRange" class="field-hint"></div>
+          <div class="calculator-grid">
+            <div class="calculator-result"><span data-i18n="dailyProfit">Прибыль в день</span><strong><span id="calcDailyProfit">—</span> <small>USDT</small></strong></div>
+            <div class="calculator-result"><span data-i18n="termProfit">Прибыль за срок</span><strong><span id="calcTermProfit">—</span> <small>USDT</small></strong></div>
+            <div class="calculator-result"><span data-i18n="depositReturn">Возврат депозита</span><strong><span id="calcPrincipalReturn">—</span> <small>USDT</small></strong></div>
+            <div class="calculator-result highlight"><span data-i18n="totalReturn">Всего к получению</span><strong><span id="calcTotalReturn">—</span> <small>USDT</small></strong></div>
+          </div>
+          <div class="calculator-final-row"><span data-i18n="finalDayPayment">Выплата в последний день</span><strong><span id="calcFinalDay">—</span> USDT</strong></div>
+          <p class="fineprint calculator-note" id="profitCalcNote" data-i18n="profitCalcNote">Ежедневно выплачивается прибыль. В последний день отдельно возвращается тело депозита.</p>
+          <button id="calculatorToDeposit" class="primary-btn" type="button" data-i18n="goToDeposit">Перейти к пополнению</button>
+        </article>
+      </section>
+
+      <section id="view-assets" class="view">
+        <div class="page-heading"><p class="overline" data-i18n="portfolio">ПОРТФЕЛЬ</p><h2 data-i18n="assets">Активы</h2><p data-i18n="assetsDesc">Активные и завершённые депозиты с прогрессом выплат.</p></div>
+        <div id="assetsSummary" class="summary-strip"></div>
+        <div id="assetList" class="stack-list"></div>
+      </section>
+
+      <section id="view-wallet" class="view">
+        <div class="page-heading"><p class="overline" data-i18n="wallet">КОШЕЛЁК</p><h2 data-i18n="depositAndPayout">Пополнение и выплаты</h2><p data-i18n="walletDesc">Адрес для выплат и создание точной заявки на пополнение USDT BEP-20.</p></div>
+
+        <article class="panel form-card">
+          <div class="form-heading"><span class="form-icon">↗</span><div><strong data-i18n="payoutWallet">Кошелёк для выплат</strong><small data-i18n="payoutWalletHint">BNB Smart Chain · адрес 0x…</small></div></div>
+          <label class="input-label" for="walletInput" data-i18n="address">Адрес</label>
+          <div class="input-shell"><input id="walletInput" autocomplete="off" spellcheck="false" placeholder="0x0000…"><button id="saveWallet" class="input-action" type="button" data-i18n="save">Сохранить</button></div>
+          <p id="walletState" class="field-hint"></p>
+        </article>
+
+        <article class="panel form-card">
+          <div class="form-heading"><span class="form-icon">↧</span><div><strong data-i18n="newDeposit">Новое пополнение</strong><small>USDT · BEP-20 · BNB Smart Chain</small></div></div>
+          <label class="input-label" for="depositAmount" data-i18n="amount">Сумма USDT</label>
+          <div class="input-shell amount-shell"><input id="depositAmount" type="number" inputmode="decimal" min="10" step="0.01" placeholder="100"><span class="unit">USDT</span></div>
+          <button id="createDeposit" class="primary-btn" type="button" data-i18n="createInvoice">Создать заявку</button>
+          <div id="invoiceBox" class="invoice-box hidden"></div>
+        </article>
+
+        <article class="notice-card panel"><span class="notice-icon">!</span><div><strong data-i18n="networkWarningTitle">Проверьте сеть и точную сумму</strong><p data-i18n="networkWarningText">Отправляйте только USDT BEP-20 на показанный адрес и ровно ту сумму, которую сформировала заявка.</p></div></article>
+      </section>
+
+      <section id="view-team" class="view">
+        <div class="page-heading"><p class="overline" data-i18n="partnerProgram">ПАРТНЁРСКАЯ ПРОГРАММА</p><h2 data-i18n="team">Команда</h2><p data-i18n="teamDesc">Реферальная ссылка, пять уровней и фактическая статистика вашей структуры.</p></div>
+        <article class="panel referral-card">
+          <div id="teamInviter" class="inviter-row"><span data-i18n="inviter">Пригласитель</span><strong>—</strong></div>
+          <span class="input-label" data-i18n="referralLink">Ваша реферальная ссылка</span>
+          <div class="copy-field"><code id="referralLink">—</code><button id="copyReferral" class="compact-btn" type="button" data-i18n="copy">Копировать</button></div>
+        </article>
+
+        <article class="panel referral-stats-card">
+          <div class="section-row"><div><p class="overline" data-i18n="yourStats">ВАША СТАТИСТИКА</p><h3 data-i18n="referralStats">Партнёрская статистика</h3></div></div>
+          <div class="referral-stats-grid">
+            <div class="ref-stat"><span class="ref-stat-icon income">$</span><div><span data-i18n="referralIncome">Доход от партнёрки</span><strong><span id="teamReferralIncome">0.00</span> USDT</strong></div></div>
+            <div class="ref-stat"><span class="ref-stat-icon today">↗</span><div><span data-i18n="todayEarned">Сегодня</span><strong>+<span id="teamTodayIncome">0.00</span> USDT</strong></div></div>
+            <div class="ref-stat"><span class="ref-stat-icon personal">◆</span><div><span data-i18n="yourInvestments">Ваши инвестиции</span><strong><span id="teamPersonal">0.00</span> USDT</strong></div></div>
+            <div class="ref-stat"><span class="ref-stat-icon turnover">◉</span><div><span data-i18n="lineTurnover">Оборот линии</span><strong><span id="teamLineTurnover">0.00</span> USDT</strong></div></div>
+            <div class="ref-stat"><span class="ref-stat-icon people">♟</span><div><span data-i18n="inTeam">В команде</span><strong id="teamTotalMembers">0</strong></div></div>
+            <div class="ref-stat"><span class="ref-stat-icon levels">▣</span><div><span data-i18n="levelsUnlocked">Уровни</span><strong><span id="teamCurrentLevel">0</span>/<span id="teamLevelsTotal">5</span></strong></div></div>
+          </div>
+          <div class="referral-balance-box">
+            <div class="referral-balance-head"><div><span data-i18n="availableToWithdraw">Доступно к выводу</span><strong><span id="referralAvailable">0.00</span> USDT</strong></div><div class="referral-pending"><span data-i18n="withdrawalPending">В обработке</span><strong><span id="referralPending">0.00</span> USDT</strong></div></div>
+            <button id="withdrawReferral" class="primary-btn referral-withdraw-btn" type="button" data-i18n="withdrawReferral">Вывести на кошелёк</button>
+            <p id="referralWithdrawHint" class="fineprint" data-i18n="withdrawMinHint">Минимальная сумма вывода — 1 USDT. Выплата отправляется на кошелёк из профиля.</p>
+          </div>
+        </article>
+
+        <article id="nextReferralGoal" class="panel next-goal-card">
+          <p class="overline" data-i18n="nextGoal">СЛЕДУЮЩАЯ ЦЕЛЬ</p>
+          <div class="next-goal-title"><strong id="nextGoalTitle">—</strong><span id="nextGoalRate" class="level-rate">—</span></div>
+          <span class="input-label" data-i18n="remaining">Осталось</span>
+          <div id="nextGoalRemaining" class="next-goal-remaining"></div>
+        </article>
+
+        <div id="levelCards" class="level-grid"></div>
+        <article class="panel members-panel">
+          <div class="section-row"><div><p class="overline" data-i18n="structure">СТРУКТУРА</p><h3 data-i18n="members">Участники</h3></div><button id="refreshTeam" class="icon-btn" type="button" aria-label="Обновить">↻</button></div>
+          <div id="teamMembers" class="stack-list compact-list"></div>
+        </article>
+      </section>
+
+      <section id="view-history" class="view">
+        <div class="page-heading"><p class="overline" data-i18n="activity">АКТИВНОСТЬ</p><h2 data-i18n="history">История</h2><p data-i18n="historyDesc">Депозиты и выплаты в хронологическом порядке.</p></div>
+        <div class="segmented"><button class="segment active" type="button" data-history="all" data-i18n="all">Все</button><button class="segment" type="button" data-history="deposits" data-i18n="deposits">Депозиты</button><button class="segment" type="button" data-history="payouts" data-i18n="payouts">Выплаты</button></div>
+        <div id="historyList" class="stack-list"></div>
+      </section>
+
+      <section id="view-profile" class="view">
+        <div class="page-heading"><p class="overline" data-i18n="account">АККАУНТ</p><h2 data-i18n="profile">Профиль</h2></div>
+        <article class="panel profile-card"><div id="profileAvatar" class="profile-avatar">G</div><div class="profile-copy"><strong id="profileName">—</strong><span id="profileUsername">—</span></div><span id="profileRole" class="status-pill">USER</span></article>
+        <article id="profileDetails" class="panel detail-list"></article>
+        <div class="profile-actions">
+          <button id="openSupport" class="secondary-btn" type="button"><span>?</span><span data-i18n="support">Поддержка</span></button>
+          <button id="openChat" class="secondary-btn" type="button"><span>✦</span><span data-i18n="chat">Чат</span></button>
+          <button id="profileWallet" class="secondary-btn" type="button"><span>↗</span><span data-i18n="wallet">Кошелёк</span></button>
+        </div>
+      </section>
+
+      <section id="view-notifications" class="view">
+        <div class="page-heading notification-heading"><div><p class="overline" data-i18n="notificationCenter">ЦЕНТР СОБЫТИЙ</p><h2 data-i18n="notifications">Уведомления</h2><p data-i18n="notificationsDesc">Пополнения, выплаты и события партнёрской программы.</p></div><button id="markAllNotificationsRead" class="compact-btn" type="button" data-i18n="markAllRead">Прочитать все</button></div>
+        <div class="segmented notification-filters">
+          <button class="segment active" data-notification-filter="all" type="button" data-i18n="all">Все</button>
+          <button class="segment" data-notification-filter="deposit" type="button" data-i18n="deposits">Депозиты</button>
+          <button class="segment" data-notification-filter="payout" type="button" data-i18n="payouts">Выплаты</button>
+          <button class="segment" data-notification-filter="partner" type="button" data-i18n="partnerProgramShort">Партнёрка</button>
+        </div>
+        <div id="notificationList" class="stack-list notification-list"></div>
+      </section>
+
+      <section id="view-admin" class="view">
+        <div class="page-heading admin-heading"><div><p class="overline">GFORT CONTROL</p><h2 data-i18n="adminPanel">Админ-панель</h2><p data-i18n="adminDesc">Пользователи, операции, рассылки и состояние системы.</p></div><button id="refreshAdmin" class="icon-btn" type="button" aria-label="Обновить">↻</button></div>
+        <div id="adminSummary" class="admin-summary"></div>
+        <div id="adminTabs" class="admin-tabs">
+          <button class="admin-tab active" data-admin-tab="overview" type="button" data-i18n="overview">Обзор</button>
+          <button class="admin-tab" data-admin-tab="users" type="button" data-i18n="users">Пользователи</button>
+          <button class="admin-tab" data-admin-tab="deposits" type="button" data-i18n="deposits">Депозиты</button>
+          <button class="admin-tab" data-admin-tab="payouts" type="button" data-i18n="payouts">Выплаты</button>
+          <button class="admin-tab" data-admin-tab="broadcasts" type="button" data-i18n="broadcasts">Рассылка</button>
+          <button class="admin-tab" data-admin-tab="admins" type="button" data-i18n="administrators">Администраторы</button>
+          <button class="admin-tab" data-admin-tab="terms" type="button" data-i18n="terms">Условия</button>
+          <button class="admin-tab" data-admin-tab="links" type="button" data-i18n="links">Ссылки</button>
+          <button class="admin-tab" data-admin-tab="treasury" type="button" data-i18n="treasury">Казна</button>
+          <button class="admin-tab" data-admin-tab="system" type="button" data-i18n="system">Система</button>
+          <button class="admin-tab" data-admin-tab="logs" type="button" data-i18n="logs">Логи</button>
+        </div>
+
+        <div id="admin-overview" class="admin-section active"></div>
+        <div id="admin-users" class="admin-section">
+          <article class="panel search-panel"><label class="input-label" for="adminSearch" data-i18n="userSearch">Поиск по ID или @username</label><div class="input-shell"><input id="adminSearch" autocomplete="off" placeholder="123456789 / username"><button id="adminSearchBtn" class="input-action" type="button" data-i18n="search">Найти</button></div></article>
+          <div id="adminUsersList" class="stack-list"></div>
+        </div>
+        <div id="admin-deposits" class="admin-section"><div id="adminDepositsList" class="stack-list"></div></div>
+        <div id="admin-payouts" class="admin-section"><div class="segmented"><button class="segment active" data-payout-filter="all" type="button" data-i18n="all">Все</button><button class="segment" data-payout-filter="failed" type="button" data-i18n="failed">Ошибки</button></div><div id="adminPayoutsList" class="stack-list"></div></div>
+        <div id="admin-broadcasts" class="admin-section">
+          <article class="panel form-card broadcast-composer">
+            <div class="form-heading"><span class="form-icon">⌁</span><div><strong data-i18n="newBroadcast">Новая рассылка</strong><small data-i18n="blockedExcluded">Заблокированные пользователи исключаются автоматически</small></div></div>
+            <label class="input-label" for="broadcastAudience" data-i18n="audience">Аудитория</label>
+            <select id="broadcastAudience" class="select-input"><option value="all" data-i18n="allUsers">Все пользователи</option><option value="investors" data-i18n="investors">Только инвесторы</option><option value="partners" data-i18n="partners">Только партнёры</option></select>
+            <label class="input-label" for="broadcastText" data-i18n="message">Сообщение</label>
+            <div class="format-toolbar" aria-label="Форматирование">
+              <button type="button" data-format-tag="b"><b>B</b></button>
+              <button type="button" data-format-tag="i"><i>I</i></button>
+              <button type="button" data-format-tag="u"><u>U</u></button>
+              <button type="button" data-format-tag="s"><s>S</s></button>
+              <button type="button" data-format-tag="code">&lt;/&gt;</button>
+              <button type="button" id="broadcastLinkFormat">↗</button>
+            </div>
+            <textarea id="broadcastText" class="textarea-input" maxlength="4096" rows="7" placeholder="Текст рассылки..."></textarea>
+            <p class="field-hint" data-i18n="formatHint">Форматирование отправляется в Telegram как HTML.</p>
+
+            <div class="broadcast-attachment">
+              <label class="attachment-button" for="broadcastImage"><span>▣</span><span data-i18n="attachImage">Прикрепить картинку</span></label>
+              <input id="broadcastImage" class="hidden-file" type="file" accept="image/jpeg,image/png">
+              <div id="broadcastImagePreview" class="attachment-preview hidden"><img id="broadcastImageThumb" alt=""><div><strong id="broadcastImageName"></strong><small id="broadcastImageSize"></small></div><button id="removeBroadcastImage" type="button">×</button></div>
+            </div>
+
+            <div class="broadcast-buttons-block">
+              <div class="section-row"><div><span class="input-label" data-i18n="broadcastButtons">Кнопки</span><small class="field-hint" data-i18n="broadcastButtonsHint">До 8 кнопок-ссылок под сообщением.</small></div><button id="addBroadcastButton" class="compact-btn" type="button" data-i18n="addButton">+ Кнопка</button></div>
+              <div id="broadcastButtonsBuilder" class="broadcast-buttons-builder"></div>
+            </div>
+            <button id="sendBroadcast" class="primary-btn" type="button" data-i18n="send">Отправить</button>
+          </article>
+          <div id="adminBroadcastList" class="stack-list"></div>
+        </div>
+        <div id="admin-admins" class="admin-section">
+          <article class="panel form-card admin-grant-card">
+            <div class="form-heading"><span class="form-icon">🛡</span><div><strong data-i18n="adminManagement">Управление администраторами</strong><small data-i18n="adminManagementHint">Полный доступ к админ-панели и команде /admin.</small></div></div>
+            <label class="input-label" for="adminGrantInput" data-i18n="adminIdentifier">Telegram ID или @username</label>
+            <div class="input-shell admin-grant-input"><input id="adminGrantInput" autocomplete="off" inputmode="text" placeholder="123456789 / username"><button id="grantAdminBtn" class="input-action" type="button" data-i18n="addAdmin">Добавить</button></div>
+            <p class="field-hint" data-i18n="adminUserMustExist">Пользователь должен хотя бы один раз открыть GFORT, чтобы появиться в базе.</p>
+          </article>
+          <div id="adminAdminsList" class="stack-list"></div>
+        </div>
+        <div id="admin-terms" class="admin-section"></div>
+        <div id="admin-links" class="admin-section"></div>
+        <div id="admin-treasury" class="admin-section"></div>
+        <div id="admin-system" class="admin-section"></div>
+        <div id="admin-logs" class="admin-section"><div id="adminLogsList" class="stack-list"></div></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Навигация">
+      <button class="nav-btn active" data-view="home" type="button"><span>⌂</span><small data-i18n="home">Главная</small></button>
+      <button class="nav-btn" data-view="assets" type="button"><span>◈</span><small data-i18n="assets">Активы</small></button>
+      <button class="nav-btn" data-view="wallet" type="button"><span>↧</span><small data-i18n="wallet">Кошелёк</small></button>
+      <button class="nav-btn" data-view="team" type="button"><span>◎</span><small data-i18n="team">Команда</small></button>
+      <button class="nav-btn" data-view="history" type="button"><span>≡</span><small data-i18n="history">История</small></button>
+      <button id="adminNav" class="nav-btn hidden" data-view="admin" type="button"><span>⚙</span><small data-i18n="admin">Админ</small></button>
+    </nav>
+  </div>
+
+  <div id="languageSheet" class="sheet hidden" role="dialog" aria-modal="true">
+    <button id="languageBackdrop" class="sheet-backdrop" type="button" aria-label="Закрыть"></button>
+    <div class="sheet-card">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title"><strong data-i18n="language">Язык</strong><button id="languageClose" class="icon-btn" type="button">×</button></div>
+      <div id="languageList" class="language-list"></div>
+    </div>
+  </div>
+
+  <div id="userModal" class="sheet hidden" role="dialog" aria-modal="true">
+    <button id="userModalBackdrop" class="sheet-backdrop" type="button" aria-label="Закрыть"></button>
+    <div class="sheet-card tall-sheet"><div class="sheet-handle"></div><div class="sheet-title"><strong data-i18n="user">Пользователь</strong><button id="userModalClose" class="icon-btn" type="button">×</button></div><div id="adminUserDetail"></div></div>
+  </div>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script src="/assets/app.js?v=gfort-v10-notifications-3"></script>
+</body>
+</html>
