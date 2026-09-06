@@ -3,11 +3,13 @@ import base64
 import hashlib
 import hmac
 import html
+import ipaddress
 import json
 import logging
 import os
 import re
 import signal
+import socket
 import time
 import uuid
 from html.parser import HTMLParser
@@ -20,10 +22,11 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from eth_account import Account
 from web3 import Web3
 
@@ -32,6 +35,7 @@ from .api_settings import MiniAppSettings
 from .config import Settings
 from .launcher import run_launcher
 from .repository import DeltaRepository, RepositoryError
+from .runtime_secrets import ChainSecretBundle, RuntimeSecretError, RuntimeSecretStore
 from .services.blockchain import EvmTokenClient
 from .services.broadcasts import BroadcastService
 from .services.notifications import UserNotificationService
@@ -162,6 +166,14 @@ class AdminUserBalanceRequest(BaseModel):
     balance_usdt: Decimal = Field(ge=0, le=Decimal("1000000000000"))
     reason: str = Field(min_length=2, max_length=500)
 
+    @field_validator("reason")
+    @classmethod
+    def reason_must_be_meaningful(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 2:
+            raise ValueError("Reason is required")
+        return clean
+
 
 class AdminUserWalletRequest(BaseModel):
     address: str | None = Field(default=None, max_length=42)
@@ -175,10 +187,26 @@ class AdminReferralBalanceRequest(BaseModel):
     balance_usdt: Decimal = Field(ge=0, le=Decimal("1000000000000"))
     reason: str = Field(min_length=2, max_length=500)
 
+    @field_validator("reason")
+    @classmethod
+    def reason_must_be_meaningful(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 2:
+            raise ValueError("Reason is required")
+        return clean
+
 
 class AdminReferralLevelRequest(BaseModel):
     unlocked_level: int = Field(ge=0, le=5)
     reason: str = Field(min_length=2, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_be_meaningful(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 2:
+            raise ValueError("Reason is required")
+        return clean
 
 
 class AdminOpenInvestmentRequest(BaseModel):
@@ -187,6 +215,21 @@ class AdminOpenInvestmentRequest(BaseModel):
     operation_id: str = Field(min_length=16, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
     confirm: Literal["OPEN_INVESTMENT"]
 
+    @field_validator("reason")
+    @classmethod
+    def reason_must_be_meaningful(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 2:
+            raise ValueError("Reason is required")
+        return clean
+
+    @field_validator("operation_id")
+    @classmethod
+    def operation_id_must_be_clean(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 16:
+            raise ValueError("Invalid investment operation ID")
+        return clean
 
 class AdminTestPayoutRequest(BaseModel):
     address: str = Field(min_length=42, max_length=42)
@@ -211,6 +254,12 @@ class BroadcastMediaUploadRequest(BaseModel):
     data_base64: str = Field(min_length=16)
 
 
+class BroadcastTestRequest(BaseModel):
+    """Text-only rehearsal delivered to the acting admin, never to an audience."""
+
+    message: str = Field(min_length=1, max_length=4096)
+
+
 class RuntimeSettingsRequest(BaseModel):
     daily_profit_bps: int = Field(ge=1, le=10000)
     payout_days: int = Field(ge=1, le=20)
@@ -221,7 +270,9 @@ class RuntimeSettingsRequest(BaseModel):
     referral_personal_thresholds_usdt: list[int] = Field(min_length=5, max_length=5)
     referral_line_thresholds_usdt: list[int] = Field(min_length=5, max_length=5)
     deposits_enabled: bool
+    investments_enabled: bool | None = None
     payouts_enabled: bool
+    referral_enabled: bool | None = None
     confirmation_blocks: int = Field(ge=0, le=100)
     deposit_scan_interval_seconds: int = Field(ge=1, le=3600)
     support_url: str = Field(min_length=4, max_length=512)
@@ -229,12 +280,41 @@ class RuntimeSettingsRequest(BaseModel):
 
 
 class ChainRuntimeConfigRequest(BaseModel):
-    mode: Literal["production", "testnet", "off"]
+    mode: Literal["production", "testnet"]
     token_contract: str = Field(min_length=42, max_length=42)
     scan_start_block: int = Field(ge=0, le=10_000_000_000)
-    rpc_url: str | None = Field(default=None, max_length=4096)
-    wss_url: str | None = Field(default=None, max_length=4096)
-    seed_phrase: str | None = Field(default=None, max_length=512)
+    rpc_url: SecretStr
+    wss_url: SecretStr
+    seed_phrase: SecretStr
+    reason: str = Field(min_length=4, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def chain_reason_must_be_meaningful(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 4:
+            raise ValueError("Reason is required")
+        return clean
+
+
+class ChainActivationRequest(BaseModel):
+    generation: str = Field(pattern=r"^[a-f0-9]{32}$")
+    treasury_confirmation: str = Field(min_length=42, max_length=42)
+    operation_id: str = Field(
+        min_length=16,
+        max_length=80,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
+    reason: str = Field(min_length=4, max_length=500)
+    confirm: Literal["ACTIVATE_CHAIN"]
+
+    @field_validator("reason")
+    @classmethod
+    def activation_reason_must_be_meaningful(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 4:
+            raise ValueError("Reason is required")
+        return clean
 
 
 class AuthenticatedUser(BaseModel):
@@ -242,6 +322,7 @@ class AuthenticatedUser(BaseModel):
     username: str | None
     first_name: str
     is_admin: bool
+    is_owner: bool = False
 
 
 @dataclass(slots=True)
@@ -249,6 +330,26 @@ class RuntimeStatus:
     started_at: float = field(default_factory=time.time)
     last_payout_tick: float | None = None
     last_payout_error: str | None = None
+
+
+@dataclass(slots=True)
+class ChainSetupRuntime:
+    status: Literal["bootstrap", "configured", "active", "degraded"] = "bootstrap"
+    active_generation: str | None = None
+    pending_generation: str | None = None
+    public_fingerprint: str | None = None
+    last_error_code: str | None = None
+    financial_ready: bool = False
+
+    def snapshot(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "active_generation": self.active_generation,
+            "pending_generation": self.pending_generation,
+            "public_fingerprint": self.public_fingerprint,
+            "last_error_code": self.last_error_code,
+            "financial_ready": self.financial_ready,
+        }
 
 
 class SlidingWindowRateLimiter:
@@ -347,7 +448,9 @@ def runtime_settings_snapshot(business: MiniAppSettings, chain_settings: Setting
         "referral_personal_thresholds_usdt": list(business.referral_personal_thresholds_usdt),
         "referral_line_thresholds_usdt": list(business.referral_line_thresholds_usdt),
         "deposits_enabled": bool(chain_settings.deposits_enabled),
+        "investments_enabled": bool(chain_settings.investments_enabled),
         "payouts_enabled": bool(chain_settings.payouts_enabled),
+        "referral_enabled": bool(chain_settings.referral_enabled),
         "confirmation_blocks": int(chain_settings.confirmation_blocks),
         "deposit_scan_interval_seconds": int(chain_settings.deposit_scan_interval_seconds),
         "support_url": str(chain_settings.support_url),
@@ -366,7 +469,8 @@ def apply_runtime_settings(
         "referral_personal_thresholds_usdt", "referral_line_thresholds_usdt",
     }
     chain_fields = {
-        "deposits_enabled", "payouts_enabled", "confirmation_blocks",
+        "deposits_enabled", "investments_enabled", "payouts_enabled",
+        "referral_enabled", "confirmation_blocks",
         "deposit_scan_interval_seconds", "support_url", "chat_url", "environment",
         "chain_enabled", "simulate_payouts", "chain_id", "token_contract",
         "treasury_address", "scan_start_block",
@@ -393,77 +497,87 @@ def validate_runtime_settings_payload(payload: RuntimeSettingsRequest) -> None:
         raise HTTPException(status_code=422, detail="Chat URL is invalid")
 
 
-RUNTIME_SECRET_FILENAMES = {
-    "rpc": "bsc_rpc_url.txt",
-    "wss": "bsc_wss_url.txt",
-    "seed": "seed_phrase.txt",
-}
+def runtime_secret_store(chain_settings: Settings) -> RuntimeSecretStore | None:
+    key_file = chain_settings.runtime_config_key_file
+    if key_file is None:
+        return None
+    return RuntimeSecretStore(
+        Path(chain_settings.database_path).parent / "runtime_secrets",
+        key_file,
+    )
 
 
-def _runtime_secret_dir(chain_settings: Settings) -> Path:
-    return Path(chain_settings.database_path).parent / "runtime_secrets"
+def apply_chain_bundle(chain_settings: Settings, bundle: ChainSecretBundle) -> None:
+    chain_settings.environment = bundle.mode
+    chain_settings.chain_enabled = True
+    chain_settings.simulate_payouts = False
+    chain_settings.chain_id = bundle.chain_id
+    chain_settings.bsc_rpc_url = bundle.rpc_url
+    chain_settings.bsc_wss_url = bundle.wss_url
+    chain_settings.token_contract = bundle.token_contract
+    chain_settings.treasury_address = bundle.treasury_address
+    chain_settings.scan_start_block = bundle.scan_start_block
+    chain_settings.payout_seed_phrase = SecretStr(bundle.seed_phrase)
+    chain_settings.payout_private_key = None
+    chain_settings.payout_keystore_path = None
+    chain_settings.payout_keystore_password = None
 
 
-def _runtime_secret_path(chain_settings: Settings, kind: str) -> Path:
-    return _runtime_secret_dir(chain_settings) / RUNTIME_SECRET_FILENAMES[kind]
+def disable_financial_runtime(chain_settings: Settings) -> None:
+    chain_settings.chain_enabled = False
+    chain_settings.deposits_enabled = False
+    chain_settings.investments_enabled = False
+    chain_settings.payouts_enabled = False
+    chain_settings.referral_enabled = False
+    chain_settings.simulate_payouts = False
+    chain_settings.bsc_rpc_url = ""
+    chain_settings.bsc_wss_url = ""
+    chain_settings.treasury_address = ""
+    chain_settings.payout_seed_phrase = None
+    chain_settings.payout_private_key = None
+    chain_settings.payout_keystore_path = None
+    chain_settings.payout_keystore_password = None
 
 
-def _read_runtime_secret(chain_settings: Settings, kind: str) -> str:
-    path = _runtime_secret_path(chain_settings, kind)
+async def validate_public_provider_url(
+    value: str,
+    *,
+    schemes: frozenset[str],
+    label: str,
+) -> None:
     try:
-        if not path.is_file() or path.stat().st_size > 65_536:
-            return ""
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-
-
-def _write_runtime_secret(chain_settings: Settings, kind: str, value: str) -> None:
-    root = _runtime_secret_dir(chain_settings)
-    root.mkdir(parents=True, exist_ok=True)
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"{label} endpoint is invalid") from exc
+    if parsed.scheme not in schemes or not parsed.hostname:
+        raise HTTPException(status_code=422, detail=f"{label} endpoint has an invalid scheme")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=422, detail=f"{label} endpoint credentials must use the URL path")
+    host = parsed.hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        raise HTTPException(status_code=422, detail=f"{label} endpoint must be public")
     try:
-        root.chmod(0o700)
-    except OSError:
-        pass
-    path = _runtime_secret_path(chain_settings, kind)
-    temp = path.with_name(path.name + f".{uuid.uuid4().hex}.tmp")
-    temp.write_text(value.strip() + "\n", encoding="utf-8")
-    try:
-        temp.chmod(0o600)
-        os.replace(temp, path)
-        path.chmod(0o600)
-    finally:
+        direct = ipaddress.ip_address(host)
+        addresses = {direct}
+    except ValueError:
         try:
-            temp.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
-def apply_runtime_secret_overrides(chain_settings: Settings) -> None:
-    rpc = _read_runtime_secret(chain_settings, "rpc")
-    wss = _read_runtime_secret(chain_settings, "wss")
-    seed = _read_runtime_secret(chain_settings, "seed")
-    if rpc:
-        chain_settings.bsc_rpc_url = rpc
-    if wss:
-        chain_settings.bsc_wss_url = wss
-    if seed:
-        chain_settings.payout_seed_phrase = SecretStr(seed)
-        chain_settings.payout_private_key = None
-        chain_settings.payout_keystore_path = None
-        chain_settings.payout_keystore_password = None
-
-
-def _provider_label(url: str) -> str:
-    if not url:
-        return "not configured"
-    try:
-        parsed = urlsplit(url)
-        host = parsed.hostname or "configured"
-        port = f":{parsed.port}" if parsed.port else ""
-        return f"{parsed.scheme}://{host}{port}"
-    except Exception:
-        return "configured"
+            records = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: socket.getaddrinfo(
+                    host,
+                    port or (443 if parsed.scheme in {"https", "wss"} else 80),
+                    type=socket.SOCK_STREAM,
+                ),
+            )
+        except OSError as exc:
+            raise HTTPException(status_code=422, detail=f"{label} endpoint DNS lookup failed") from exc
+        addresses = {
+            ipaddress.ip_address(str(record[4][0]).split("%", 1)[0])
+            for record in records
+        }
+    if not addresses or any(not address.is_global for address in addresses):
+        raise HTTPException(status_code=422, detail=f"{label} endpoint must resolve only to public addresses")
 
 
 def validate_chain_runtime_candidate(candidate: Settings) -> None:
@@ -511,7 +625,10 @@ def validate_chain_runtime_candidate(candidate: Settings) -> None:
         raise HTTPException(status_code=422, detail="A payout signing method is required")
 
 
-def chain_runtime_snapshot(chain_settings: Settings) -> dict[str, object]:
+def chain_runtime_snapshot(
+    chain_settings: Settings,
+    setup: ChainSetupRuntime,
+) -> dict[str, object]:
     phrase = chain_settings.payout_seed_phrase.get_secret_value().strip() if chain_settings.payout_seed_phrase else ""
     mode = "off"
     if chain_settings.chain_enabled:
@@ -522,14 +639,10 @@ def chain_runtime_snapshot(chain_settings: Settings) -> dict[str, object]:
         "token_contract": chain_settings.token_contract,
         "treasury_address": chain_settings.treasury_address,
         "scan_start_block": int(chain_settings.scan_start_block),
-        "rpc_provider": _provider_label(chain_settings.bsc_rpc_url),
-        "wss_provider": _provider_label(chain_settings.bsc_wss_url),
         "rpc_configured": bool(chain_settings.bsc_rpc_url),
         "wss_configured": bool(chain_settings.bsc_wss_url),
         "seed_configured": bool(phrase),
-        "runtime_rpc_override": _runtime_secret_path(chain_settings, "rpc").is_file(),
-        "runtime_wss_override": _runtime_secret_path(chain_settings, "wss").is_file(),
-        "runtime_seed_override": _runtime_secret_path(chain_settings, "seed").is_file(),
+        "setup": setup.snapshot(),
     }
 
 
@@ -578,6 +691,150 @@ async def payout_loop(
             pass
 
 
+async def initialize_chain_runtime(
+    chain_settings: Settings,
+    business: MiniAppSettings,
+    repository: DeltaRepository,
+) -> tuple[EvmTokenClient | None, object | None, RuntimeSecretStore | None, ChainSetupRuntime]:
+    store = runtime_secret_store(chain_settings)
+    state = await repository.get_chain_config_state()
+    setup = ChainSetupRuntime(
+        status=str(state.get("status") or "bootstrap"),  # type: ignore[arg-type]
+        active_generation=(
+            str(state["active_generation"]) if state.get("active_generation") else None
+        ),
+        pending_generation=(
+            str(state["pending_generation"]) if state.get("pending_generation") else None
+        ),
+        public_fingerprint=(
+            str(state["public_fingerprint"]) if state.get("public_fingerprint") else None
+        ),
+        last_error_code=(
+            str(state["last_error_code"]) if state.get("last_error_code") else None
+        ),
+    )
+
+    # Legacy deployments without the runtime key retain their existing startup
+    # path. The bootstrap installer always provisions the key explicitly.
+    if store is None:
+        if chain_settings.chain_enabled:
+            validate_chain_runtime_candidate(chain_settings)
+            chain = EvmTokenClient(chain_settings)
+            health = await chain.healthcheck()
+            setup.status = "active"
+            setup.financial_ready = True
+            return chain, health, None, setup
+        if chain_settings.environment != "production":
+            setup.status = "active"
+            setup.financial_ready = True
+            return None, None, None, setup
+        disable_financial_runtime(chain_settings)
+        setup.status = "bootstrap"
+        await repository.mark_chain_config_runtime(
+            "bootstrap",
+            generation=None,
+            public_fingerprint=None,
+        )
+        return None, None, None, setup
+
+    try:
+        bundle = store.load_active()
+    except RuntimeSecretError:
+        try:
+            store.quarantine_active()
+        except RuntimeSecretError:
+            pass
+        disable_financial_runtime(chain_settings)
+        setup.status = "degraded"
+        setup.active_generation = None
+        setup.last_error_code = "active_bundle_unreadable"
+        await repository.mark_chain_config_runtime(
+            "degraded",
+            generation=None,
+            public_fingerprint=setup.public_fingerprint,
+            error_code=setup.last_error_code,
+        )
+        return None, None, store, setup
+
+    if bundle is None:
+        disable_financial_runtime(chain_settings)
+        setup.status = "configured" if setup.pending_generation else "bootstrap"
+        setup.financial_ready = False
+        await repository.mark_chain_config_runtime(
+            setup.status,
+            generation=None,
+            public_fingerprint=setup.public_fingerprint,
+        )
+        return None, None, store, setup
+
+    async def start_bundle(
+        selected: ChainSecretBundle,
+    ) -> tuple[EvmTokenClient, object]:
+        apply_chain_bundle(chain_settings, selected)
+        validate_deployment_settings(chain_settings, business)
+        validate_chain_runtime_candidate(chain_settings)
+        client = EvmTokenClient(chain_settings)
+        try:
+            health = await client.healthcheck()
+            await client.websocket_healthcheck()
+            return client, health
+        except BaseException:
+            await client.close()
+            raise
+
+    try:
+        chain, health = await start_bundle(bundle)
+    except Exception as exc:
+        logger.error("Active chain configuration failed startup validation: %s", type(exc).__name__)
+        try:
+            rolled_back = store.rollback()
+            previous = store.load_active() if rolled_back else None
+            if previous is not None:
+                chain, health = await start_bundle(previous)
+                setup.status = "active"
+                setup.active_generation = previous.generation
+                setup.public_fingerprint = previous.public_fingerprint
+                setup.last_error_code = "rolled_back_after_startup_failure"
+                setup.financial_ready = True
+                await repository.mark_chain_config_runtime(
+                    "active",
+                    generation=previous.generation,
+                    public_fingerprint=previous.public_fingerprint,
+                    error_code=setup.last_error_code,
+                )
+                return chain, health, store, setup
+        except Exception as rollback_exc:
+            logger.error("Previous chain configuration could not be restored: %s", type(rollback_exc).__name__)
+        try:
+            store.quarantine_active()
+        except RuntimeSecretError:
+            pass
+        disable_financial_runtime(chain_settings)
+        setup.status = "degraded"
+        setup.active_generation = None
+        setup.last_error_code = "chain_startup_validation_failed"
+        setup.financial_ready = False
+        await repository.mark_chain_config_runtime(
+            "degraded",
+            generation=None,
+            public_fingerprint=bundle.public_fingerprint,
+            error_code=setup.last_error_code,
+        )
+        return None, None, store, setup
+
+    setup.status = "active"
+    setup.active_generation = bundle.generation
+    setup.public_fingerprint = bundle.public_fingerprint
+    setup.last_error_code = None
+    setup.financial_ready = True
+    await repository.mark_chain_config_runtime(
+        "active",
+        generation=bundle.generation,
+        public_fingerprint=bundle.public_fingerprint,
+    )
+    return chain, health, store, setup
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     chain_settings = Settings()
@@ -594,14 +851,11 @@ async def lifespan(application: FastAPI):
     # final profit day, add the missing principal payout without touching
     # deposits that were already completed before the upgrade.
     await repository.ensure_missing_principal_payouts()
-    apply_runtime_secret_overrides(chain_settings)
-    validate_chain_runtime_candidate(chain_settings)
-
-    chain: EvmTokenClient | None = None
-    chain_health: object | None = None
-    if chain_settings.chain_enabled:
-        chain = EvmTokenClient(chain_settings)
-        chain_health = await chain.healthcheck()
+    chain, chain_health, secret_store, chain_setup = await initialize_chain_runtime(
+        chain_settings,
+        business,
+        repository,
+    )
 
     runtime = RuntimeStatus()
     safety_runtime = SafetyRuntime()
@@ -650,7 +904,7 @@ async def lifespan(application: FastAPI):
                     bot_token,
                     business.miniapp_url,
                     repository=repository,
-                    admin_ids=chain_settings.admin_id_set,
+                    admin_ids=chain_settings.admin_id_set | chain_settings.owner_id_set,
                 ),
                 name="telegram-miniapp-launcher",
             )
@@ -693,6 +947,8 @@ async def lifespan(application: FastAPI):
     application.state.repository = repository
     application.state.chain = chain
     application.state.chain_health = chain_health
+    application.state.secret_store = secret_store
+    application.state.chain_setup = chain_setup
     application.state.runtime = runtime
     application.state.safety_runtime = safety_runtime
     application.state.payout_circuit = payout_circuit
@@ -713,8 +969,8 @@ async def lifespan(application: FastAPI):
 
 startup_settings = MiniAppSettings()
 app = FastAPI(
-    title="GFORT Mini App API",
-    version="10.4-safety-mainnet",
+    title="NOVERA Mini App API",
+    version="10.6-owner-bootstrap",
     lifespan=lifespan,
     docs_url="/docs" if startup_settings.demo_mode else None,
     redoc_url=None,
@@ -737,6 +993,25 @@ app.add_middleware(
     ],
     expose_headers=["X-Request-Id", "Retry-After"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def sanitized_validation_error(
+    _request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    # FastAPI's default Pydantic response includes the rejected input. That is
+    # unsafe for write-only RPC/WSS/seed fields.
+    details: list[dict[str, object]] = []
+    for error in exc.errors():
+        details.append(
+            {
+                "type": str(error.get("type") or "value_error"),
+                "loc": list(error.get("loc") or ()),
+                "msg": str(error.get("msg") or "Invalid request"),
+            }
+        )
+    return JSONResponse(status_code=422, content={"detail": details})
 
 
 @app.middleware("http")
@@ -792,6 +1067,65 @@ async def request_guard(request: Request, call_next):
     return response
 
 
+def _header_text(value: object) -> str:
+    """Normalise an optional header value to a stripped string.
+
+    When a route function is invoked directly (tests, internal callers) the
+    unset ``Header(default=None)`` parameters arrive as FastAPI param objects
+    rather than ``None``. Anything that is not a string is treated as absent.
+    """
+    return value.strip() if isinstance(value, str) else ""
+
+
+_SESSION_HEADER_NAMES = (
+    "x-novera-session",
+    "x-gfort-session",
+)
+_TELEGRAM_CONTEXT_HEADER_NAMES = (
+    "x-novera-telegram-context",
+    "x-gfort-telegram-context",
+)
+
+
+def _is_native_context(init_data: str, context_header: object) -> bool:
+    return bool(init_data) or _header_text(context_header).lower() in {
+        "1", "true", "telegram", "native"
+    }
+
+
+def _client_session_token(request: Request, declared: object) -> str:
+    """Accept NOVERA and legacy GFORT session header names."""
+    direct = _header_text(declared)
+    if direct:
+        return direct
+    headers = getattr(request, "headers", None)
+    if headers is None:
+        return ""
+    for name in _SESSION_HEADER_NAMES:
+        value = _header_text(headers.get(name))
+        if value:
+            return value
+    return ""
+
+
+def _native_telegram_context(
+    request: Request,
+    init_data: str,
+    declared: object,
+) -> bool:
+    if _is_native_context(init_data, declared):
+        return True
+    headers = getattr(request, "headers", None)
+    if headers is None:
+        return False
+    for name in _TELEGRAM_CONTEXT_HEADER_NAMES:
+        if _header_text(headers.get(name)).lower() in {
+            "1", "true", "telegram", "native"
+        }:
+            return True
+    return False
+
+
 def _referrer_id_from_start_param(start_param: str | None) -> int | None:
     if start_param and start_param.startswith("ref_"):
         raw_referrer = start_param.removeprefix("ref_")
@@ -843,11 +1177,11 @@ async def current_user(
     repository: DeltaRepository = request.app.state.repository
     bot_token = chain_settings.bot_token.get_secret_value()
     telegram_user: TelegramUser | None = None
-    init_data = (x_telegram_init_data or "").strip()
-    client_session = (x_gfort_session or "").strip()
-    native_context = bool(init_data) or str(x_gfort_telegram_context or "").strip().lower() in {
-        "1", "true", "telegram", "native"
-    }
+    init_data = _header_text(x_telegram_init_data)
+    client_session = _client_session_token(request, x_gfort_session)
+    native_context = _native_telegram_context(
+        request, init_data, x_gfort_telegram_context
+    )
     client_error: TelegramAuthError | None = None
     init_error: TelegramAuthError | None = None
 
@@ -920,7 +1254,12 @@ async def current_user(
         telegram_id=telegram_user.id,
         username=telegram_user.username,
         first_name=telegram_user.first_name,
-        is_admin=telegram_user.id in chain_settings.admin_id_set or dynamic_admin,
+        is_admin=(
+            telegram_user.id in chain_settings.owner_id_set
+            or telegram_user.id in chain_settings.admin_id_set
+            or dynamic_admin
+        ),
+        is_owner=telegram_user.id in chain_settings.owner_id_set,
     )
 
 
@@ -933,6 +1272,94 @@ async def admin_user(
             detail="Admin access required",
         )
     return user
+
+
+async def owner_user(
+    user: AuthenticatedUser = Depends(current_user),
+) -> AuthenticatedUser:
+    if not user.is_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner access required",
+        )
+    return user
+
+
+def current_chain_setup(request: Request) -> ChainSetupRuntime:
+    setup: ChainSetupRuntime | None = getattr(request.app.state, "chain_setup", None)
+    if setup is not None:
+        return setup
+    chain_settings: Settings = request.app.state.chain_settings
+    active = chain_settings.environment != "production" or chain_settings.chain_enabled
+    return ChainSetupRuntime(
+        status="active" if active else "bootstrap",
+        financial_ready=active,
+    )
+
+
+def require_financial_activation(
+    request: Request,
+    *,
+    capability: Literal["deposits", "investments", "payouts", "referral"] | None = None,
+) -> Settings:
+    chain_settings: Settings = request.app.state.chain_settings
+    setup: ChainSetupRuntime | None = getattr(request.app.state, "chain_setup", None)
+    # Unit/local callers historically assemble app.state without lifespan.
+    # Production always has an explicit setup state.
+    if setup is None and chain_settings.environment != "production":
+        return chain_settings
+    if (
+        setup is None
+        or setup.status != "active"
+        or not setup.financial_ready
+        or not chain_settings.chain_enabled
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Financial services are locked until owner activation",
+        )
+    enabled = {
+        "deposits": chain_settings.deposits_enabled,
+        "investments": chain_settings.investments_enabled,
+        "payouts": chain_settings.payouts_enabled,
+        "referral": chain_settings.referral_enabled,
+    }
+    if capability and not enabled[capability]:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{capability.capitalize()} are temporarily disabled",
+        )
+    return chain_settings
+
+
+def require_recent_owner_init_data(
+    request: Request,
+    owner: AuthenticatedUser,
+    init_data: str | None,
+) -> None:
+    value = _header_text(init_data)
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Fresh Telegram authorization is required",
+        )
+    chain_settings: Settings = request.app.state.chain_settings
+    try:
+        recent = validate_init_data(
+            value,
+            chain_settings.bot_token.get_secret_value(),
+            max_age_seconds=300,
+        )
+    except TelegramAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Fresh Telegram authorization is required",
+        ) from exc
+    if recent.id != owner.telegram_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Telegram owner identity mismatch",
+        )
 
 
 async def enforce_mutation_limit(
@@ -958,10 +1385,12 @@ async def enforce_mutation_limit(
 @app.get("/health")
 async def health(request: Request) -> dict[str, object]:
     chain_settings: Settings = request.app.state.chain_settings
+    setup = current_chain_setup(request)
     return {
         "status": "ok",
         "version": app.version,
         "environment": chain_settings.environment,
+        "setup_status": setup.status,
     }
 
 
@@ -970,13 +1399,15 @@ async def ready(request: Request):
     repository: DeltaRepository = request.app.state.repository
     tasks: list[asyncio.Task[object]] = request.app.state.tasks
     database_ok = await repository.ping()
-    failed_tasks = [task.get_name() for task in tasks if task.done() and not task.cancelled()]
+    failed_tasks = [task.get_name() for task in tasks if task.done()]
     ready_now = database_ok and not failed_tasks
     safety_runtime: SafetyRuntime = request.app.state.safety_runtime
+    setup = current_chain_setup(request)
     payload = {
         "status": "ready" if ready_now else "not_ready",
         "database": database_ok,
         "failed_tasks": failed_tasks,
+        "setup": setup.snapshot(),
         "safety": {
             "status": safety_runtime.status,
             "circuit_open": safety_runtime.circuit_open,
@@ -1003,11 +1434,11 @@ async def exchange_bot_login(
     business: MiniAppSettings = request.app.state.business
     repository: DeltaRepository = request.app.state.repository
     bot_token = chain_settings.bot_token.get_secret_value()
-    init_data = (x_telegram_init_data or "").strip()
-    client_session = (x_gfort_session or "").strip()
-    native_context = bool(init_data) or str(x_gfort_telegram_context or "").strip().lower() in {
-        "1", "true", "telegram", "native"
-    }
+    init_data = _header_text(x_telegram_init_data)
+    client_session = _client_session_token(request, x_gfort_session)
+    native_context = _native_telegram_context(
+        request, init_data, x_gfort_telegram_context
+    )
 
     # /start tokens are one-time, random and live for only ten minutes. They
     # are the recovery path for Telegram clients whose cached WebView does not
@@ -1133,6 +1564,7 @@ async def bootstrap(
         "demo": business.demo_mode,
         "mainnet": chain_settings.chain_enabled and chain_settings.chain_id == 56,
         "web_only": not chain_settings.chain_enabled,
+        "setup": current_chain_setup(request).snapshot(),
     }
     result["terms"] = {
         "daily_profit_bps": business.daily_profit_bps,
@@ -1220,8 +1652,8 @@ async def withdraw_referral_rewards(
     await enforce_mutation_limit(request, user, "referral-withdrawal")
     if not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
         raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
-    chain_settings: Settings = request.app.state.chain_settings
-    if not (chain_settings.chain_enabled and chain_settings.payouts_enabled):
+    chain_settings = require_financial_activation(request, capability="payouts")
+    if not chain_settings.referral_enabled:
         raise HTTPException(status_code=503, detail="Payouts are temporarily disabled")
     repository: DeltaRepository = request.app.state.repository
     try:
@@ -1275,7 +1707,7 @@ async def create_invoice(
     if not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
         raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
     repository: DeltaRepository = request.app.state.repository
-    chain_settings: Settings = request.app.state.chain_settings
+    chain_settings = require_financial_activation(request, capability="deposits")
     if not (
         chain_settings.chain_enabled
         and chain_settings.deposits_enabled
@@ -1361,8 +1793,12 @@ async def admin_set_user_balance(
     payload: AdminUserBalanceRequest,
     request: Request,
     user: AuthenticatedUser = Depends(admin_user),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, object]:
     await enforce_mutation_limit(request, user, "user-balance")
+    require_financial_activation(request)
+    if not idempotency_key or not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
+        raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
     repository: DeltaRepository = request.app.state.repository
     try:
         result = await repository.set_user_balance(
@@ -1370,10 +1806,17 @@ async def admin_set_user_balance(
             usdt_to_minor(payload.balance_usdt),
             user.telegram_id,
             payload.reason,
+            idempotency_key,
         )
     except RepositoryError as exc:
-        code = 404 if str(exc) == "User not found" else 422
-        raise HTTPException(status_code=code, detail=str(exc)) from exc
+        detail = str(exc)
+        if detail == "User not found":
+            code = 404
+        elif "Idempotency" in detail:
+            code = 409
+        else:
+            code = 422
+        raise HTTPException(status_code=code, detail=detail) from exc
     return {
         **result,
         "balance_usdt": minor_to_text(int(result["new_balance_minor"]), trim=False),
@@ -1435,8 +1878,12 @@ async def admin_set_referral_balance(
     payload: AdminReferralBalanceRequest,
     request: Request,
     user: AuthenticatedUser = Depends(admin_user),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, object]:
     await enforce_mutation_limit(request, user, "referral-balance")
+    require_financial_activation(request, capability="referral")
+    if not idempotency_key or not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
+        raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
     repository: DeltaRepository = request.app.state.repository
     try:
         result = await repository.admin_set_referral_balance(
@@ -1444,12 +1891,17 @@ async def admin_set_referral_balance(
             usdt_to_minor(payload.balance_usdt),
             user.telegram_id,
             payload.reason,
+            idempotency_key,
         )
     except RepositoryError as exc:
-        raise HTTPException(
-            status_code=404 if str(exc) == "User not found" else 422,
-            detail=str(exc),
-        ) from exc
+        detail = str(exc)
+        if detail == "User not found":
+            code = 404
+        elif "Idempotency" in detail:
+            code = 409
+        else:
+            code = 422
+        raise HTTPException(status_code=code, detail=detail) from exc
     return {
         **result,
         "balance_usdt": minor_to_text(int(result["new_balance_minor"]), trim=False),
@@ -1462,8 +1914,12 @@ async def admin_set_referral_level(
     payload: AdminReferralLevelRequest,
     request: Request,
     user: AuthenticatedUser = Depends(admin_user),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, object]:
     await enforce_mutation_limit(request, user, "referral-level")
+    require_financial_activation(request, capability="referral")
+    if not idempotency_key or not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
+        raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
     repository: DeltaRepository = request.app.state.repository
     try:
         return await repository.admin_set_referral_level(
@@ -1471,12 +1927,17 @@ async def admin_set_referral_level(
             payload.unlocked_level,
             user.telegram_id,
             payload.reason,
+            idempotency_key,
         )
     except RepositoryError as exc:
-        raise HTTPException(
-            status_code=404 if str(exc) == "User not found" else 422,
-            detail=str(exc),
-        ) from exc
+        detail = str(exc)
+        if detail == "User not found":
+            code = 404
+        elif "Idempotency" in detail:
+            code = 409
+        else:
+            code = 422
+        raise HTTPException(status_code=code, detail=detail) from exc
 
 
 @app.post("/api/admin/users/{telegram_id}/investments")
@@ -1487,6 +1948,7 @@ async def admin_open_investment(
     user: AuthenticatedUser = Depends(admin_user),
 ) -> dict[str, object]:
     await enforce_mutation_limit(request, user, "open-investment")
+    require_financial_activation(request, capability="investments")
     repository: DeltaRepository = request.app.state.repository
     try:
         result = await repository.admin_open_investment(
@@ -1518,14 +1980,16 @@ async def admin_admins(
 ) -> list[dict[str, object]]:
     repository: DeltaRepository = request.app.state.repository
     chain_settings: Settings = request.app.state.chain_settings
-    return await repository.admin_admins(chain_settings.admin_id_set)
+    return await repository.admin_admins(
+        chain_settings.admin_id_set | chain_settings.owner_id_set
+    )
 
 
 @app.post("/api/admin/admins")
 async def add_admin(
     payload: AdminGrantRequest,
     request: Request,
-    user: AuthenticatedUser = Depends(admin_user),
+    user: AuthenticatedUser = Depends(owner_user),
 ) -> dict[str, object]:
     await enforce_mutation_limit(request, user, "grant-admin")
     repository: DeltaRepository = request.app.state.repository
@@ -1536,7 +2000,9 @@ async def add_admin(
         if str(exc) == "User not found":
             raise HTTPException(status_code=404, detail="User not found") from exc
         raise HTTPException(status_code=422, detail="Invalid administrator identifier") from exc
-    if int(result["telegram_id"]) in chain_settings.admin_id_set:
+    if int(result["telegram_id"]) in (
+        chain_settings.admin_id_set | chain_settings.owner_id_set
+    ):
         result["source"] = "bootstrap"
         result["protected"] = True
     return result
@@ -1546,12 +2012,12 @@ async def add_admin(
 async def remove_admin(
     telegram_id: int,
     request: Request,
-    user: AuthenticatedUser = Depends(admin_user),
+    user: AuthenticatedUser = Depends(owner_user),
 ) -> dict[str, bool]:
     await enforce_mutation_limit(request, user, "revoke-admin")
     chain_settings: Settings = request.app.state.chain_settings
-    if telegram_id in chain_settings.admin_id_set:
-        raise HTTPException(status_code=409, detail="Bootstrap administrator cannot be removed")
+    if telegram_id in (chain_settings.admin_id_set | chain_settings.owner_id_set):
+        raise HTTPException(status_code=409, detail="Bootstrap owner or administrator cannot be removed")
     if telegram_id == user.telegram_id:
         raise HTTPException(status_code=409, detail="Administrator cannot remove itself")
     repository: DeltaRepository = request.app.state.repository
@@ -1590,6 +2056,7 @@ async def retry_payout(
     user: AuthenticatedUser = Depends(admin_user),
 ) -> dict[str, bool]:
     await enforce_mutation_limit(request, user, "retry-payout")
+    require_financial_activation(request, capability="payouts")
     repository: DeltaRepository = request.app.state.repository
     return {"retried": await repository.retry_payout(payout_id)}
 
@@ -1601,6 +2068,51 @@ async def admin_broadcasts(
 ) -> list[dict[str, object]]:
     repository: DeltaRepository = request.app.state.repository
     return await repository.admin_broadcasts()
+
+
+@app.get("/api/admin/broadcasts/audience")
+async def admin_broadcast_audience(
+    request: Request,
+    _user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, int]:
+    repository: DeltaRepository = request.app.state.repository
+    return await repository.broadcast_audience_counts()
+
+
+@app.post("/api/admin/broadcasts/test")
+async def send_broadcast_test(
+    payload: BroadcastTestRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "broadcast-test")
+    message = sanitize_telegram_html(payload.message)
+    if not message:
+        raise HTTPException(status_code=422, detail="Broadcast message or image is required")
+    repository: DeltaRepository = request.app.state.repository
+    try:
+        queued = await repository.queue_broadcast_self_test(
+            user.telegram_id,
+            telegram_html=message,
+            preview=html.unescape(re.sub(r"<[^>]+>", "", message))[:400],
+        )
+    except RepositoryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"queued": queued, "recipient_id": user.telegram_id}
+
+
+@app.post("/api/admin/broadcasts/{broadcast_id}/retry")
+async def retry_broadcast(
+    broadcast_id: int,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, int]:
+    await enforce_mutation_limit(request, user, "retry-broadcast")
+    repository: DeltaRepository = request.app.state.repository
+    try:
+        return await repository.retry_broadcast(broadcast_id)
+    except RepositoryError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/admin/broadcast-media")
@@ -1728,7 +2240,7 @@ async def create_admin_test_payout(
     if not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
         raise HTTPException(status_code=422, detail="Invalid Idempotency-Key")
 
-    chain_settings: Settings = request.app.state.chain_settings
+    chain_settings = require_financial_activation(request, capability="payouts")
     chain: EvmTokenClient | None = request.app.state.chain
     if not chain_settings.payouts_enabled:
         raise HTTPException(status_code=503, detail="Payouts are temporarily disabled")
@@ -1786,11 +2298,28 @@ async def admin_runtime_settings(
 async def update_admin_runtime_settings(
     payload: RuntimeSettingsRequest,
     request: Request,
-    user: AuthenticatedUser = Depends(admin_user),
+    user: AuthenticatedUser = Depends(owner_user),
 ) -> dict[str, object]:
     await enforce_mutation_limit(request, user, "runtime-settings")
     validate_runtime_settings_payload(payload)
-    values = payload.model_dump()
+    values = payload.model_dump(exclude_none=True)
+    setup = current_chain_setup(request)
+    requested_finance = any(
+        bool(values.get(name))
+        for name in (
+            "deposits_enabled",
+            "investments_enabled",
+            "payouts_enabled",
+            "referral_enabled",
+        )
+    )
+    if requested_finance and (
+        setup.status != "active" or not setup.financial_ready
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Financial services cannot be enabled before owner chain activation",
+        )
     repository: DeltaRepository = request.app.state.repository
     try:
         await repository.set_runtime_settings(values, user.telegram_id)
@@ -1841,94 +2370,239 @@ async def admin_chain_config(
     request: Request,
     _user: AuthenticatedUser = Depends(admin_user),
 ) -> dict[str, object]:
-    return chain_runtime_snapshot(request.app.state.chain_settings)
+    return chain_runtime_snapshot(
+        request.app.state.chain_settings,
+        current_chain_setup(request),
+    )
 
 
+@app.post("/api/admin/chain-config/validate")
 @app.post("/api/admin/chain-config")
-async def update_admin_chain_config(
+async def validate_admin_chain_config(
     payload: ChainRuntimeConfigRequest,
     request: Request,
-    user: AuthenticatedUser = Depends(admin_user),
+    user: AuthenticatedUser = Depends(owner_user),
 ) -> dict[str, object]:
-    await enforce_mutation_limit(request, user, "chain-config")
+    await enforce_mutation_limit(request, user, "chain-config-validate")
+    store: RuntimeSecretStore | None = request.app.state.secret_store
+    if store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Encrypted runtime configuration store is unavailable",
+        )
+
+    rpc = payload.rpc_url.get_secret_value().strip()
+    wss = payload.wss_url.get_secret_value().strip()
+    seed = " ".join(payload.seed_phrase.get_secret_value().split())
+    await validate_public_provider_url(
+        rpc,
+        schemes=frozenset({"https"} if payload.mode == "production" else {"http", "https"}),
+        label="RPC",
+    )
+    await validate_public_provider_url(
+        wss,
+        schemes=frozenset({"wss"} if payload.mode == "production" else {"ws", "wss"}),
+        label="WSS",
+    )
+
     current: Settings = request.app.state.chain_settings
     candidate = current.model_copy(deep=True)
-
     if payload.mode == "production":
         candidate.environment = "production"
         candidate.chain_enabled = True
         candidate.simulate_payouts = False
         candidate.chain_id = 56
-    elif payload.mode == "testnet":
+    else:
         candidate.environment = "testnet"
         candidate.chain_enabled = True
         candidate.simulate_payouts = False
         candidate.chain_id = 97
-    else:
-        candidate.chain_enabled = False
-        candidate.simulate_payouts = True
-
-    candidate.token_contract = Web3.to_checksum_address(payload.token_contract) if Web3.is_address(payload.token_contract) else payload.token_contract
+    candidate.token_contract = (
+        Web3.to_checksum_address(payload.token_contract)
+        if Web3.is_address(payload.token_contract)
+        else payload.token_contract
+    )
     candidate.scan_start_block = int(payload.scan_start_block)
-
-    rpc = (payload.rpc_url or "").strip()
-    wss = (payload.wss_url or "").strip()
-    seed = (payload.seed_phrase or "").strip()
-    if rpc:
-        candidate.bsc_rpc_url = rpc
-    if wss:
-        candidate.bsc_wss_url = wss
-    if seed:
-        candidate.payout_seed_phrase = SecretStr(seed)
-        candidate.payout_private_key = None
-        candidate.payout_keystore_path = None
-        candidate.payout_keystore_password = None
-
+    candidate.bsc_rpc_url = rpc
+    candidate.bsc_wss_url = wss
+    candidate.payout_seed_phrase = SecretStr(seed)
+    candidate.payout_private_key = None
+    candidate.payout_keystore_path = None
+    candidate.payout_keystore_password = None
     validate_chain_runtime_candidate(candidate)
+    validate_deployment_settings(candidate, request.app.state.business)
 
-    rpc_health: dict[str, object] | None = None
-    wss_health: dict[str, object] | None = None
-    if candidate.chain_enabled:
-        client = EvmTokenClient(candidate)
-        try:
-            http_result = await client.healthcheck()
-            ws_result = await client.websocket_healthcheck()
-            rpc_health = {"chain_id": http_result.chain_id, "block_number": http_result.block_number}
-            wss_health = {"chain_id": ws_result.chain_id, "block_number": ws_result.block_number, "subscription_ok": ws_result.subscription_ok}
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"New blockchain configuration failed health check: {client.safe_error(exc)}") from exc
-        finally:
-            await client.close()
+    client = EvmTokenClient(candidate)
+    try:
+        http_result = await client.healthcheck()
+        ws_result = await client.websocket_healthcheck()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "New blockchain configuration failed health check: "
+                f"{client.safe_error(exc)}"
+            ),
+        ) from exc
+    finally:
+        await client.close()
 
-    nonsecret = {
-        "environment": candidate.environment,
-        "chain_enabled": bool(candidate.chain_enabled),
-        "simulate_payouts": bool(candidate.simulate_payouts),
-        "chain_id": int(candidate.chain_id),
-        "token_contract": candidate.token_contract,
-        "treasury_address": candidate.treasury_address,
-        "scan_start_block": int(candidate.scan_start_block),
-        "runtime_rpc_override": bool(rpc) or _runtime_secret_path(current, "rpc").is_file(),
-        "runtime_wss_override": bool(wss) or _runtime_secret_path(current, "wss").is_file(),
-        "runtime_seed_override": bool(seed) or _runtime_secret_path(current, "seed").is_file(),
-    }
+    bundle = ChainSecretBundle.create(
+        mode=payload.mode,
+        chain_id=candidate.chain_id,
+        rpc_url=rpc,
+        wss_url=wss,
+        seed_phrase=seed,
+        token_contract=candidate.token_contract,
+        treasury_address=candidate.treasury_address,
+        scan_start_block=candidate.scan_start_block,
+    )
+    try:
+        store.stage(bundle)
+        store.prune_pending()
+    except RuntimeSecretError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
     repository: DeltaRepository = request.app.state.repository
-    await repository.set_runtime_settings(nonsecret, user.telegram_id)
-    if rpc:
-        _write_runtime_secret(current, "rpc", rpc)
-    if wss:
-        _write_runtime_secret(current, "wss", wss)
-    if seed:
-        _write_runtime_secret(current, "seed", seed)
+    await repository.record_chain_config_staged(
+        bundle.generation,
+        bundle.public_fingerprint,
+        user.telegram_id,
+        payload.reason,
+    )
+    setup = current_chain_setup(request)
+    setup.pending_generation = bundle.generation
+    setup.public_fingerprint = bundle.public_fingerprint
+    if setup.status != "active":
+        setup.status = "configured"
 
+    return {
+        "validated": True,
+        "generation": bundle.generation,
+        "mode": payload.mode,
+        "chain_id": candidate.chain_id,
+        "treasury_address": bundle.treasury_address,
+        "public_fingerprint": bundle.public_fingerprint,
+        "rpc_health": {
+            "chain_id": http_result.chain_id,
+            "block_number": http_result.block_number,
+        },
+        "wss_health": {
+            "chain_id": ws_result.chain_id,
+            "block_number": ws_result.block_number,
+            "subscription_ok": ws_result.subscription_ok,
+        },
+    }
+
+
+@app.post("/api/admin/chain-config/activate")
+async def activate_admin_chain_config(
+    payload: ChainActivationRequest,
+    request: Request,
+    x_telegram_init_data: str | None = Header(default=None),
+    user: AuthenticatedUser = Depends(owner_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "chain-config-activate")
+    require_recent_owner_init_data(request, user, x_telegram_init_data)
+    repository: DeltaRepository = request.app.state.repository
+    existing = await repository.get_chain_activation(payload.operation_id)
+    if existing is not None:
+        if (
+            str(existing["generation"]) != payload.generation
+            or int(existing["actor_id"]) != user.telegram_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Idempotency key was already used",
+            )
+        return {
+            "activated": str(existing["status"]) == "activated",
+            "generation": payload.generation,
+            "reused": True,
+            "restart_scheduled": False,
+        }
+
+    store: RuntimeSecretStore | None = request.app.state.secret_store
+    if store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Encrypted runtime configuration store is unavailable",
+        )
+    try:
+        bundle = store.load_pending(payload.generation)
+    except RuntimeSecretError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if (
+        not Web3.is_address(payload.treasury_confirmation)
+        or Web3.to_checksum_address(payload.treasury_confirmation)
+        != Web3.to_checksum_address(bundle.treasury_address)
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Treasury confirmation does not match the derived wallet",
+        )
+
+    await validate_public_provider_url(
+        bundle.rpc_url,
+        schemes=frozenset({"https"} if bundle.mode == "production" else {"http", "https"}),
+        label="RPC",
+    )
+    await validate_public_provider_url(
+        bundle.wss_url,
+        schemes=frozenset({"wss"} if bundle.mode == "production" else {"ws", "wss"}),
+        label="WSS",
+    )
+    candidate: Settings = request.app.state.chain_settings.model_copy(deep=True)
+    apply_chain_bundle(candidate, bundle)
+    validate_chain_runtime_candidate(candidate)
+    validate_deployment_settings(candidate, request.app.state.business)
+    client = EvmTokenClient(candidate)
+    try:
+        await client.healthcheck()
+        await client.websocket_healthcheck()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Blockchain activation health check failed: {client.safe_error(exc)}",
+        ) from exc
+    finally:
+        await client.close()
+
+    try:
+        store.activate(bundle.generation)
+        result = await repository.record_chain_config_activated(
+            payload.operation_id,
+            bundle.generation,
+            bundle.public_fingerprint,
+            user.telegram_id,
+            payload.reason,
+        )
+    except RepositoryError as exc:
+        store.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeSecretError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    disable_financial_runtime(request.app.state.chain_settings)
+    setup = current_chain_setup(request)
+    setup.status = "configured"
+    setup.active_generation = bundle.generation
+    setup.pending_generation = None
+    setup.public_fingerprint = bundle.public_fingerprint
+    setup.financial_ready = False
     schedule_process_restart()
     return {
-        "saved": True,
+        "activated": True,
+        "generation": bundle.generation,
+        "treasury_address": bundle.treasury_address,
+        "reused": bool(result["reused"]),
         "restart_scheduled": True,
-        "mode": payload.mode,
-        "treasury_address": candidate.treasury_address,
-        "rpc_health": rpc_health,
-        "wss_health": wss_health,
     }
 
 
@@ -1961,6 +2635,7 @@ async def admin_system(
         )
     )
     safety_runtime: SafetyRuntime = request.app.state.safety_runtime
+    setup = current_chain_setup(request)
     return {
         "uptime_seconds": int(time.time() - runtime.started_at),
         "last_payout_tick": runtime.last_payout_tick,
@@ -1968,6 +2643,7 @@ async def admin_system(
         "chain_enabled": chain_settings.chain_enabled,
         "chain_id": chain_settings.chain_id,
         "simulate_payouts": chain_settings.simulate_payouts,
+        "setup": setup.snapshot(),
         "safety": safety_runtime.snapshot(),
         "tasks": {
             task.get_name(): "stopped" if task.done() else "running"

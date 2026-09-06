@@ -17,7 +17,7 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-for secret_file in secrets/bot_token.txt
+for secret_file in secrets/bot_token.txt secrets/runtime_config_key.txt
 do
     if [ ! -s "$secret_file" ]; then
         echo "$secret_file is missing or empty" >&2
@@ -25,9 +25,40 @@ do
     fi
 done
 
-if grep -Eq 'example\.com|your_support|^ADMIN_IDS=123456789$' .env; then
+if grep -Eq 'example\.com|your_support|^ADMIN_IDS=123456789$|^OWNER_IDS=123456789$' .env; then
     echo ".env still contains placeholder values" >&2
     exit 1
+fi
+
+owner_ids=$(awk -F= '$1 == "OWNER_IDS" {print substr($0, index($0, "=") + 1); exit}' .env)
+if ! printf '%s\n' "$owner_ids" | grep -Eq '^[0-9]+(,[0-9]+)*$'; then
+    echo "OWNER_IDS must contain immutable numeric Telegram IDs" >&2
+    exit 1
+fi
+
+python3 - secrets/runtime_config_key.txt <<'PYKEY'
+import base64
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    value = base64.b64decode(path.read_text(encoding="ascii").strip(), validate=True)
+except Exception as exc:
+    raise SystemExit("runtime configuration key is malformed") from exc
+if len(value) != 32:
+    raise SystemExit("runtime configuration key must decode to exactly 32 bytes")
+PYKEY
+
+if [ ! -f data/runtime_secrets/active.enc ]; then
+    for key in CHAIN_ENABLED DEPOSITS_ENABLED INVESTMENTS_ENABLED PAYOUTS_ENABLED REFERRAL_ENABLED
+    do
+        value=$(awk -F= -v key="$key" '$1 == key {print tolower(substr($0, index($0, "=") + 1)); exit}' .env)
+        if [ "$value" != "false" ]; then
+            echo "$key must be false before owner chain activation" >&2
+            exit 1
+        fi
+    done
 fi
 
 api_domain=$(awk -F= '$1 == "API_DOMAIN" {print substr($0, index($0, "=") + 1); exit}' .env)
@@ -56,8 +87,8 @@ fi
 mkdir -p data backups
 chown -R 10001:10001 data backups
 chmod 750 data backups
-chown root:10001 secrets/bot_token.txt
-chmod 640 secrets/bot_token.txt
+chown root:10001 secrets/bot_token.txt secrets/runtime_config_key.txt
+chmod 640 secrets/bot_token.txt secrets/runtime_config_key.txt
 chown root:root .env
 chmod 600 .env
 docker compose -f compose.vps.yml config --quiet

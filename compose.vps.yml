@@ -17,9 +17,7 @@ services:
       - ${GFORT_BACKUPS_DIR:-./backups}:/app/backups
     secrets:
       - bot_token
-      - bsc_rpc_url
-      - bsc_wss_url
-      - seed_phrase
+      - runtime_config_key
     stop_grace_period: 30s
     security_opt:
       - no-new-privileges:true
@@ -81,9 +79,5 @@ volumes:
 secrets:
   bot_token:
     file: ${GFORT_SECRETS_DIR:-./secrets}/bot_token.txt
-  bsc_rpc_url:
-    file: ${GFORT_SECRETS_DIR:-./secrets}/bsc_rpc_url.txt
-  bsc_wss_url:
-    file: ${GFORT_SECRETS_DIR:-./secrets}/bsc_wss_url.txt
-  seed_phrase:
-    file: ${GFORT_SECRETS_DIR:-./secrets}/seed_phrase.txt
+  runtime_config_key:
+    file: ${GFORT_SECRETS_DIR:-./secrets}/runtime_config_key.txt

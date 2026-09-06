@@ -53,14 +53,29 @@ async def test_deposit_and_referral_payouts_are_idempotent(tmp_path) -> None:
 
         connection = repository._connection()
         async with repository._lock:
+            # Since V8 referral rewards accrue to the referrer's balance and are
+            # withdrawn on demand; nothing is queued directly into payouts.
+            cursor = await connection.execute(
+                "SELECT COUNT(*) AS value FROM referral_accruals "
+                "WHERE referrer_id = 1 AND source_deposit_id = ? AND level = 1",
+                (referred_deposit,),
+            )
+            assert int((await cursor.fetchone())["value"]) == 1
             cursor = await connection.execute(
                 "SELECT COUNT(*) AS value FROM payouts WHERE kind = 'referral' "
                 "AND source_deposit_id = ?",
                 (referred_deposit,),
             )
-            assert int((await cursor.fetchone())["value"]) == 1
+            assert int((await cursor.fetchone())["value"]) == 0
 
         assert await repository.schedule_due_payouts() == 0
+
+        async with repository._lock:
+            cursor = await connection.execute(
+                "SELECT COUNT(*) AS value FROM referral_accruals WHERE source_deposit_id = ?",
+                (referred_deposit,),
+            )
+            assert int((await cursor.fetchone())["value"]) == 1
     finally:
         await repository.close()
 
@@ -127,10 +142,12 @@ async def test_admin_referral_controls_are_audited_and_withdrawable(tmp_path) ->
         await repository.set_wallet(31, WALLET_ONE)
 
         changed = await repository.admin_set_referral_balance(
-            31, usdt_to_minor("12.5"), 30, "Manual partner credit"
+            31, usdt_to_minor("12.5"), 30, "Manual partner credit", "repo-ref-bal-0001"
         )
         assert changed["new_balance_minor"] == usdt_to_minor("12.5")
-        level = await repository.admin_set_referral_level(31, 4, 30, "Campaign access")
+        level = await repository.admin_set_referral_level(
+            31, 4, 30, "Campaign access", "repo-ref-lvl-0001"
+        )
         assert level["unlocked_level"] == 4
         team = await repository.team(31)
         assert team["stats"]["available_minor"] == usdt_to_minor("12.5")

@@ -1,15 +1,28 @@
-# GFORT Mini App — production BSC Mainnet package
+# NOVERA Mini App — secure owner bootstrap
 
-Self-contained VPS release for `https://bnbb.tech/`. The production installer stores the Telegram token, RPC/WSS credentials and signing mnemonic in Docker secret files under `/opt/delta/secrets` and never writes them to `.env`.
+The one-file installer prepares a clean Ubuntu/Debian VPS for
+`https://bnbb.tech/`. It asks for a newly issued Telegram bot token with hidden
+input, creates the runtime encryption key, installs Docker/Caddy, starts the
+bot and Mini App, and verifies public HTTPS plus `/health` and `/ready`.
 
-Mainnet settings used by this build:
-- BNB Smart Chain chain id `56`;
-- USDT/BSC contract `0x55d398326f99059fF775485246999027B3197955`;
-- HTTPS/WSS RPC supplied at install time;
-- treasury address validated against the supplied mnemonic before startup;
-- scan start block captured from the live RPC at installation;
-- Caddy terminates HTTPS and serves the Mini App on the same origin.
+The initial production state is deliberately fail-closed:
+- immutable owner is configured through `OWNER_IDS`;
+- chain, deposits, payouts, investments and referrals are off;
+- simulation and demo modes are off;
+- RPC, WSS and signer material are absent from the installer and `.env`;
+- financial routes stay locked until an owner activation reaches `active`.
 
-The installer performs configuration, RPC/contract/wallet startup checks, Docker health checks and public `/health` + `/ready` checks.
+The owner completes blockchain setup under **Admin → System**:
+1. enter HTTPS RPC, WSS, token contract, scan start block and seed;
+2. validate both providers and the signer;
+3. compare and re-enter the derived treasury address;
+4. activate with fresh Telegram `initData`;
+5. enable only approved financial switches under **Admin → Terms**.
 
-Docker networking: the backend is not published on the host. It joins an internal backend network for Caddy traffic and a separate unexposed egress network for BSC RPC/WSS and Telegram API access.
+Runtime RPC/WSS/seed values are stored as one versioned AES-256-GCM bundle.
+SQLite contains only setup status, generation and redacted audit metadata.
+Backups include the database and encrypted active generation; the master key
+must be backed up separately.
+
+The backend is not published directly on the host. Caddy is the only public
+entry point, while the backend uses isolated internal and egress networks.

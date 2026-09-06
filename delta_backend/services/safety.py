@@ -2,7 +2,10 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import shutil
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -136,8 +139,10 @@ class SafetyMonitor:
         for path in items[keep:]:
             try:
                 checksum = path.with_suffix(path.suffix + ".sha256")
+                runtime_bundle = path.with_name(f"{path.stem}.runtime-config.enc")
                 path.unlink(missing_ok=True)
                 checksum.unlink(missing_ok=True)
+                runtime_bundle.unlink(missing_ok=True)
             except OSError:
                 logger.warning("Could not prune safety backup: %s", path.name)
 
@@ -146,8 +151,30 @@ class SafetyMonitor:
         destination.parent.mkdir(parents=True, exist_ok=True)
         backup_database(Path(self.settings.database_path), destination)
         digest = self._sha256(destination)
+        manifest_lines = [f"{digest}  {destination.name}"]
+        runtime_source = (
+            Path(self.settings.database_path).parent
+            / "runtime_secrets"
+            / "active.enc"
+        )
+        if runtime_source.is_file():
+            runtime_destination = destination.with_name(
+                f"{destination.stem}.runtime-config.enc"
+            )
+            temporary = runtime_destination.with_name(
+                f".{runtime_destination.name}.{uuid.uuid4().hex}.tmp"
+            )
+            try:
+                shutil.copyfile(runtime_source, temporary)
+                temporary.chmod(0o640)
+                os.replace(temporary, runtime_destination)
+            finally:
+                temporary.unlink(missing_ok=True)
+            manifest_lines.append(
+                f"{self._sha256(runtime_destination)}  {runtime_destination.name}"
+            )
         checksum = destination.with_suffix(destination.suffix + ".sha256")
-        checksum.write_text(f"{digest}  {destination.name}\n", encoding="ascii")
+        checksum.write_text("\n".join(manifest_lines) + "\n", encoding="ascii")
         destination.chmod(0o640)
         checksum.chmod(0o640)
         self._prune_backups(destination.parent)

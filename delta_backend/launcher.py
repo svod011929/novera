@@ -84,11 +84,11 @@ def create_dispatcher(
     async def start(message: Message) -> None:
         language = (message.from_user.language_code or "ru") if message.from_user else "ru"
         if language.startswith("en"):
-            button = "Open GFORT"
+            button = "Open NOVERA"
         elif language.startswith("uk"):
-            button = "Відкрити GFORT"
+            button = "Відкрити NOVERA"
         else:
-            button = "Открыть GFORT"
+            button = "Открыть NOVERA"
 
         start_param = None
         if message.text:
@@ -109,10 +109,10 @@ def create_dispatcher(
         )
 
         text = (
-            "⚫️ <b>GFORT | DIGITAL ARBITRAGE ECOSYSTEM</b>\n\n"
-            '<a href="https://t.me/GFORTROBOT">🤖 @GFORTROBOT</a>\n\n'
-            "◼︎ <b>О GFORT</b>\n\n"
-            "GFORT — цифровая инвестиционная платформа, ориентированная на использование возможностей "
+            "💠 <b>NOVERA | DIGITAL CAPITAL ECOSYSTEM</b>\n\n"
+            '<a href="https://t.me/NoveraBot">🤖 @NoveraBot</a>\n\n'
+            "◼︎ <b>О NOVERA</b>\n\n"
+            "NOVERA — цифровая инвестиционная платформа, ориентированная на использование возможностей "
             "криптовалютного арбитража и автоматизированных торговых механизмов.\n\n"
             "Платформа анализирует котировки цифровых активов на различных торговых площадках, "
             "выявляя ценовые расхождения и потенциальные арбитражные возможности.\n\n"
@@ -151,7 +151,7 @@ def create_dispatcher(
             "Личный депозит: <b>1 000 USDT</b>\n"
             "Объём 1-й линии: <b>5 000 USDT</b>\n\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "⚡ <b>GFORT ECOSYSTEM</b>\n\n"
+            "⚡ <b>NOVERA ECOSYSTEM</b>\n\n"
             "<b>Automated Infrastructure</b>\n"
             "Автоматизированная обработка операций и рыночных данных.\n\n"
             "<b>Arbitrage Analytics</b>\n"
@@ -161,11 +161,11 @@ def create_dispatcher(
             "<b>Partner Infrastructure</b>\n"
             "Инструменты для построения и развития собственной партнёрской сети.\n\n"
             "━━━━━━━━━━━━━━━━━━\n\n"
-            "◼︎ <b>ENTER GFORT</b>\n\n"
-            "GFORT объединяет криптовалютный арбитраж, автоматизированную инфраструктуру и "
+            "◼︎ <b>ENTER NOVERA</b>\n\n"
+            "NOVERA объединяет криптовалютный арбитраж, автоматизированную инфраструктуру и "
             "партнёрские инструменты в единой цифровой экосистеме.\n\n"
-            '<a href="https://t.me/GFORTROBOT">🤖 @GFORTROBOT</a>\n'
-            '<a href="https://t.me/+CKR1x-wkWZNiNTYx">👥 GFORT Community</a>'
+            '<a href="https://t.me/NoveraBot">🤖 @NoveraBot</a>\n'
+            '<a href="https://t.me/+CKR1x-wkWZNiNTYx">👥 NOVERA Community</a>'
         )
         await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
     async def partner_stats(message: Message) -> None:
@@ -191,7 +191,7 @@ def create_dispatcher(
         current_level = int(stats.get("current_level") or 0)
         team_count = int(stats.get("team_count") or 0)
         text = (
-            "📊 <b>GFORT | PARTNER NETWORK</b>\n\n"
+            "📊 <b>NOVERA | PARTNER NETWORK</b>\n\n"
             f"💎 Доход от партнёрки: <b>{earned} USDT</b>\n"
             f"📈 Сегодня: <b>+{today} USDT</b>\n"
             f"💼 Доступно к выводу: <b>{available} USDT</b>\n"
@@ -241,7 +241,7 @@ def create_dispatcher(
         paid = minor_to_text(int(summary.get("paid_minor", 0)))
         active = minor_to_text(int(summary.get("active_principal_minor", 0)))
         text = (
-            "🛠 <b>GFORT · Админ-панель</b>\n\n"
+            "🛠 <b>NOVERA · Админ-панель</b>\n\n"
             f"👥 Пользователей: <b>{summary.get('users', 0)}</b> "
             f"(активных 7 дн.: {summary.get('active_users_7d', 0)}, за сутки: +{summary.get('new_users_24h', 0)})\n"
             f"📥 Депозиты: <b>{deposited} USDT</b>\n"
@@ -304,7 +304,7 @@ async def run_launcher(
         try:
             await bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
-                    text="Открыть GFORT",
+                    text="Открыть NOVERA",
                     web_app=WebAppInfo(url=miniapp_url),
                 )
             )

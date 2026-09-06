@@ -1,6 +1,9 @@
-GFORT V10.6 ADMIN CONTROLS
-base: V10.5 Safe Deploy + V10.4 Safety
-admin-controls: referral-balance, manual-investments, referral-level-access
+NOVERA V10.6 BOOTSTRAP · NOVERA DIGITAL CAPITAL ECOSYSTEM
+base: V10.5 Safe Deploy + V10.4 Safety + V10.6 Admin Controls
+candidate: one-file fresh-VPS owner bootstrap (financially fail-closed)
+ui-brand: NOVERA (cyan/violet, Orbitron/Manrope, mark in frontend/assets/brand)
 release-layout: /opt/gfort/releases/<release>
 persistent-state: /opt/gfort/state
 compatibility-link: /opt/delta -> /opt/gfort/current
+chain-state: bootstrap/configured/active/degraded; encrypted versioned runtime bundle
+hard-stop: artifact build only; no automatic production install

@@ -26,7 +26,7 @@ def validate_init_data(
     init_data: str,
     bot_token: str,
     *,
-    max_age_seconds: int | None = 3600,
+    max_age_seconds: int | None = 3600,  # None or 0 disables the age check
     now: int | None = None,
 ) -> TelegramUser:
     if not init_data:
@@ -56,7 +56,9 @@ def validate_init_data(
         raise TelegramAuthError("Telegram auth_date is missing") from exc
     if auth_date > current_time + 300:
         raise TelegramAuthError("Telegram auth_date is in the future")
-    if max_age_seconds is not None and current_time - auth_date > max_age_seconds:
+    # ``None`` or ``0`` disables the age check; production settings validate
+    # the TTL to 60..86400 seconds, so this only affects explicit callers.
+    if max_age_seconds and current_time - auth_date > max_age_seconds:
         raise TelegramAuthError("Telegram initData has expired")
 
     try:

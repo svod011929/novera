@@ -20,7 +20,7 @@ class MiniAppSettings(BaseSettings):
 
     miniapp_url: str = "http://localhost:3000"
     miniapp_origin: str = "http://localhost:3000"
-    bot_username: str = "GFORTROBOT"
+    bot_username: str = "NoveraBot"
     run_bot_launcher: bool = True
     run_broadcast_worker: bool = True
     demo_mode: bool = True

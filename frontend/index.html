@@ -3,9 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#090a0d">
-  <title>GFORT</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=gfort-v10-6-admin-controls-1">
+  <meta name="theme-color" content="#00050A">
+  <title>NOVERA</title>
+  <meta name="application-name" content="NOVERA">
+  <link rel="icon" type="image/jpeg" href="/assets/brand/novera-logo.jpg?v=novera-logo-1">
+  <link rel="stylesheet" href="/assets/styles.css?v=novera-master-followup-3">
+  <link rel="stylesheet" href="/assets/novera-brand.css?v=novera-master-followup-3">
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 </head>
 <body>
@@ -15,43 +18,79 @@
 
   <div id="app" class="app-shell">
     <header class="topbar">
-      <button id="brandBtn" class="brand-block" type="button" aria-label="GFORT">
-        <span class="brand-icon">G</span>
-        <span><strong>GFORT</strong><small>Mini App</small></span>
+      <button id="brandBtn" class="brand-block" type="button" aria-label="NOVERA">
+        <span class="brand-icon" aria-hidden="true"><img src="/assets/brand/novera-logo.jpg?v=novera-logo-1" alt="NOVERA" width="48" height="48"></span>
+        <span><strong>NOVERA</strong><small>Digital Capital</small></span>
       </button>
       <div class="top-actions">
         <button id="notificationsBtn" class="notification-btn" type="button" aria-label="Уведомления"><span class="notification-bell">🔔</span><span id="notificationBadge" class="notification-badge hidden">0</span></button>
         <button id="languageBtn" class="outline-chip" type="button"><span id="languageShort">RU</span><span class="chev">⌄</span></button>
-        <button id="profileBtn" class="avatar-btn" type="button" aria-label="Профиль">G</button>
+        <button id="profileBtn" class="avatar-btn" type="button" aria-label="Профиль">N</button>
       </div>
     </header>
 
     <main class="content">
       <section id="sessionBanner" class="session-banner hidden">
-        <div><strong data-i18n="sessionTitle">Сессия Telegram устарела</strong><p data-i18n="sessionText">Закройте Mini App и откройте его снова из бота.</p></div>
-        <button id="closeMiniApp" class="compact-btn" type="button" data-i18n="close">Закрыть</button>
+        <div>
+          <strong data-i18n="sessionTitle">Сессия Telegram устарела</strong>
+          <p data-i18n="sessionText">Закройте Mini App и откройте его снова из бота.</p>
+          <p id="sessionRecoverHint" class="session-recover-hint">Если сессия устарела: закройте Mini App → отправьте боту /start → откройте NOVERA из нового сообщения.</p>
+        </div>
+        <div class="session-actions">
+          <button id="sessionRecoverCta" class="primary-btn touch-target" type="button">Открыть бота и нажать /start</button>
+          <button id="closeMiniApp" class="compact-btn touch-target" type="button" data-i18n="close">Закрыть</button>
+        </div>
       </section>
+
+      <section id="offlineBanner" class="offline-banner hidden" role="status" aria-live="polite">
+        <div>
+          <strong data-offline-title>Нет сети</strong>
+          <p data-offline-text>Проверьте подключение. Данные обновятся автоматически, когда связь восстановится.</p>
+        </div>
+        <button id="retryConnection" class="primary-btn touch-target" type="button">Повторить</button>
+      </section>
+      <p id="networkStatus" class="network-status hidden" aria-live="polite"></p>
 
       <section id="view-home" class="view active">
         <article class="hero-card panel">
           <div class="hero-topline"><span class="live-dot"></span><span id="networkState">BSC MAINNET</span><span class="hero-spacer"></span><span id="accountState" class="status-pill" data-i18n="connecting">Подключение</span></div>
           <div class="hero-copy">
             <p class="overline" data-i18n="dashboard">ЛИЧНЫЙ КАБИНЕТ</p>
-            <h1><span data-i18n="welcome">Добро пожаловать</span><br><em id="heroName">GFORT</em></h1>
+            <h1><span data-i18n="welcome">Добро пожаловать</span><br><em id="heroName">NOVERA</em></h1>
             <p id="heroSubtitle" class="hero-subtitle" data-i18n="heroSubtitle">Ваши активы, выплаты и команда в одном месте.</p>
           </div>
           <div class="hero-balance">
             <span data-i18n="activeAssets">Сейчас в работе</span>
-            <strong><span id="activePrincipal">0.00</span> <small>USDT</small></strong>
+            <strong class="money"><span id="activePrincipal">0.00</span> <small>USDT</small></strong>
+            <div class="hero-next-payout">
+              <span data-i18n="nextPayout">Следующая выплата</span>
+              <strong id="nextPayoutValue">—</strong>
+            </div>
           </div>
         </article>
 
+        <div class="position-strip" id="homePosition">
+          <article class="position-card panel">
+            <span data-i18n="receivedPaid">Уже получено</span>
+            <strong id="homePaid" class="money">0.00</strong>
+            <small data-i18n="receivedPaidHint">подтверждённые выплаты</small>
+          </article>
+          <article class="position-card panel position-projected">
+            <span data-i18n="expectedRemaining">Ожидается по графику</span>
+            <strong id="homeExpected" class="money">0.00</strong>
+            <small data-i18n="expectedHint">прогноз · не баланс к выводу</small>
+          </article>
+          <article class="position-card panel">
+            <span data-i18n="partnerAvailableShort">Партнёрка к выводу</span>
+            <strong id="homePartnerAvailable" class="money">0.00</strong>
+            <small data-i18n="partnerAvailableHint">доступно сейчас</small>
+          </article>
+        </div>
+
         <div class="stats-grid">
-          <article class="stat-card panel"><span data-i18n="totalDeposited">Всего пополнено</span><strong id="totalDeposited">0.00</strong><small>USDT</small></article>
-          <article class="stat-card panel"><span data-i18n="totalPaid">Получено выплат</span><strong id="totalPaid">0.00</strong><small>USDT</small></article>
-          <article class="stat-card panel"><span data-i18n="accountBalance">Баланс аккаунта</span><strong id="accountBalance">0.00</strong><small>USDT</small></article>
-          <article class="stat-card panel"><span data-i18n="team">Команда</span><strong id="teamCount">0</strong><small data-i18n="people">участников</small></article>
-          <article class="stat-card panel"><span data-i18n="partnerIncome">Партнёрский доход</span><strong id="refIncome">0.00</strong><small>USDT</small></article>
+          <article class="stat-card panel"><span data-i18n="totalDeposited">Всего пополнено</span><strong id="totalDeposited" class="money">0.00</strong><small>USDT</small></article>
+          <article class="stat-card panel"><span data-i18n="internalBalance">Внутренний баланс</span><strong id="accountBalance" class="money">0.00</strong><small data-i18n="internalBalanceHint">не прогноз выплат</small></article>
+          <article class="stat-card panel"><span data-i18n="team">Команда</span><strong id="teamCount" class="money">0</strong><small data-i18n="people">участников</small></article>
         </div>
 
         <article class="panel action-panel">
@@ -75,7 +114,7 @@
         </article>
 
         <article class="panel profit-calculator" id="profitCalculator">
-          <div class="form-heading"><span class="form-icon">%</span><div><strong data-i18n="profitCalculator">Калькулятор прибыли</strong><small data-i18n="profitCalculatorHint">Расчёт по текущей ставке и сроку GFORT.</small></div></div>
+          <div class="form-heading"><span class="form-icon">%</span><div><strong data-i18n="profitCalculator">Калькулятор прибыли</strong><small data-i18n="profitCalculatorHint">Расчёт по текущей ставке и сроку NOVERA.</small></div></div>
           <label class="input-label" for="profitCalcAmount" data-i18n="investmentAmount">Сумма депозита</label>
           <div class="input-shell amount-shell"><input id="profitCalcAmount" type="number" inputmode="decimal" min="1" step="0.01" placeholder="100"><span class="unit">USDT</span></div>
           <div id="profitCalcRange" class="field-hint"></div>
@@ -105,17 +144,33 @@
           <label class="input-label" for="walletInput" data-i18n="address">Адрес</label>
           <div class="input-shell"><input id="walletInput" autocomplete="off" spellcheck="false" placeholder="0x0000…"><button id="saveWallet" class="input-action" type="button" data-i18n="save">Сохранить</button></div>
           <p id="walletState" class="field-hint"></p>
+          <div id="walletImpact" class="wallet-impact" aria-live="polite">
+            <p class="field-hint" data-i18n="walletImpactLead">Смена адреса влияет только на новые операции. Уже созданные выплаты и открытые депозиты сохраняют свой адрес.</p>
+            <ul class="wallet-impact-list">
+              <li data-i18n="walletImpactNew">Новые пополнения и вывод партнёрского баланса — на этот адрес профиля.</li>
+              <li data-i18n="walletImpactDeposits">Открытые депозиты уже зафиксировали адрес при открытии; их график не переключается.</li>
+              <li data-i18n="walletImpactPipeline">Выплаты в статусах «в очереди / подписана / в сети» идут на адрес внутри самой выплаты — смена профиля их не меняет.</li>
+            </ul>
+            <p id="walletPipelineSummary" class="field-hint wallet-pipeline-summary"></p>
+          </div>
         </article>
 
-        <article class="panel form-card">
-          <div class="form-heading"><span class="form-icon">↧</span><div><strong data-i18n="newDeposit">Новое пополнение</strong><small>USDT · BEP-20 · BNB Smart Chain</small></div></div>
+        <article class="panel form-card deposit-card">
+          <div class="form-heading"><span class="form-icon">↧</span><div><strong data-i18n="newDeposit">Новое пополнение</strong><small data-i18n="depositNetworkLine">USDT · BEP-20 · BNB Smart Chain</small></div></div>
+          <div class="deposit-network-chip" aria-hidden="true">
+            <span class="chip-label" data-i18n="network">Сеть</span>
+            <strong>BNB Smart Chain · BEP-20</strong>
+            <small data-i18n="depositOnlyUsdt">Только USDT в этой сети</small>
+          </div>
           <label class="input-label" for="depositAmount" data-i18n="amount">Сумма USDT</label>
           <div class="input-shell amount-shell"><input id="depositAmount" type="number" inputmode="decimal" min="10" step="0.01" placeholder="100"><span class="unit">USDT</span></div>
+          <p id="depositRangeHint" class="field-hint"></p>
+          <p id="depositWalletGate" class="field-hint deposit-gate hidden" data-i18n="setPayoutWalletBeforeDeposit">Сначала сохраните кошелёк для выплат выше — без него заявку создать нельзя.</p>
           <button id="createDeposit" class="primary-btn" type="button" data-i18n="createInvoice">Создать заявку</button>
           <div id="invoiceBox" class="invoice-box hidden"></div>
         </article>
 
-        <article class="notice-card panel"><span class="notice-icon">!</span><div><strong data-i18n="networkWarningTitle">Проверьте сеть и точную сумму</strong><p data-i18n="networkWarningText">Отправляйте только USDT BEP-20 на показанный адрес и ровно ту сумму, которую сформировала заявка.</p></div></article>
+        <article class="notice-card panel"><span class="notice-icon">!</span><div><strong data-i18n="networkWarningTitle">Проверьте сеть и точную сумму</strong><p data-i18n="networkWarningText">Отправляйте только USDT BEP-20 на показанный адрес и ровно ту сумму, которую сформировала заявка — включая уникальный хвост. Другая сеть или другая сумма не будут зачислены.</p></div></article>
       </section>
 
       <section id="view-team" class="view">
@@ -138,7 +193,10 @@
           </div>
           <div class="referral-balance-box">
             <div class="referral-balance-head"><div><span data-i18n="availableToWithdraw">Доступно к выводу</span><strong><span id="referralAvailable">0.00</span> USDT</strong></div><div class="referral-pending"><span data-i18n="withdrawalPending">В обработке</span><strong><span id="referralPending">0.00</span> USDT</strong></div></div>
-            <button id="withdrawReferral" class="primary-btn referral-withdraw-btn" type="button" data-i18n="withdrawReferral">Вывести на кошелёк</button>
+            <div id="referralFailedWrap" class="referral-failed hidden"><span data-i18n="referralFailedLabel">Неуспешные выводы</span><strong><span id="referralFailed">0.00</span> USDT</strong></div>
+            <p id="teamLevelSource" class="level-source-line">Источник: автоматическая квалификация</p>
+            <p id="availablePendingHint" class="fineprint">Доступно — можно вывести сейчас. В обработке — уже в очереди выплат.</p>
+            <button id="withdrawReferral" class="primary-btn referral-withdraw-btn touch-target" type="button" data-i18n="withdrawReferral">Вывести на кошелёк</button>
             <p id="referralWithdrawHint" class="fineprint" data-i18n="withdrawMinHint">Минимальная сумма вывода — 1 USDT. Выплата отправляется на кошелёк из профиля.</p>
           </div>
         </article>
@@ -158,14 +216,14 @@
       </section>
 
       <section id="view-history" class="view">
-        <div class="page-heading"><p class="overline" data-i18n="activity">АКТИВНОСТЬ</p><h2 data-i18n="history">История</h2><p data-i18n="historyDesc">Депозиты и выплаты в хронологическом порядке.</p></div>
+        <div class="page-heading"><p class="overline" data-i18n="activity">АКТИВНОСТЬ</p><h2 data-i18n="history">История</h2><p data-i18n="historyDesc">Депозиты и выплаты. У каждой операции понятный статус и подсказка, нужно ли что-то делать.</p></div>
         <div class="segmented"><button class="segment active" type="button" data-history="all" data-i18n="all">Все</button><button class="segment" type="button" data-history="deposits" data-i18n="deposits">Депозиты</button><button class="segment" type="button" data-history="payouts" data-i18n="payouts">Выплаты</button></div>
         <div id="historyList" class="stack-list"></div>
       </section>
 
       <section id="view-profile" class="view">
         <div class="page-heading"><p class="overline" data-i18n="account">АККАУНТ</p><h2 data-i18n="profile">Профиль</h2></div>
-        <article class="panel profile-card"><div id="profileAvatar" class="profile-avatar">G</div><div class="profile-copy"><strong id="profileName">—</strong><span id="profileUsername">—</span></div><span id="profileRole" class="status-pill">USER</span></article>
+        <article class="panel profile-card"><div id="profileAvatar" class="profile-avatar">N</div><div class="profile-copy"><strong id="profileName">—</strong><span id="profileUsername">—</span></div><span id="profileRole" class="status-pill">USER</span></article>
         <article id="profileDetails" class="panel detail-list"></article>
         <div class="profile-actions">
           <button id="openSupport" class="secondary-btn" type="button"><span>?</span><span data-i18n="support">Поддержка</span></button>
@@ -186,7 +244,7 @@
       </section>
 
       <section id="view-admin" class="view">
-        <div class="page-heading admin-heading"><div><p class="overline">GFORT CONTROL</p><h2 data-i18n="adminPanel">Админ-панель</h2><p data-i18n="adminDesc">Пользователи, операции, рассылки и состояние системы.</p></div><button id="refreshAdmin" class="icon-btn" type="button" aria-label="Обновить">↻</button></div>
+        <div class="page-heading admin-heading"><div><p class="overline">NOVERA CONTROL</p><h2 data-i18n="adminPanel">Админ-панель</h2><p data-i18n="adminDesc">Пользователи, операции, рассылки и состояние системы.</p></div><button id="refreshAdmin" class="icon-btn" type="button" aria-label="Обновить">↻</button></div>
         <div id="adminSummary" class="admin-summary"></div>
         <div id="adminTabs" class="admin-tabs">
           <button class="admin-tab active" data-admin-tab="overview" type="button" data-i18n="overview">Обзор</button>
@@ -204,7 +262,12 @@
 
         <div id="admin-overview" class="admin-section active"></div>
         <div id="admin-users" class="admin-section">
-          <article class="panel search-panel"><label class="input-label" for="adminSearch" data-i18n="userSearch">Поиск по ID или @username</label><div class="input-shell"><input id="adminSearch" autocomplete="off" placeholder="123456789 / username"><button id="adminSearchBtn" class="input-action" type="button" data-i18n="search">Найти</button></div></article>
+          <article class="panel search-panel"><label class="input-label" for="adminSearch" data-i18n="userSearch">Поиск по ID или @username</label><div class="input-shell"><input id="adminSearch" autocomplete="off" placeholder="123456789 / username"><button id="adminSearchBtn" class="input-action touch-target" type="button" data-i18n="search">Найти</button></div></article>
+          <div class="segmented admin-user-filters">
+            <button class="segment active touch-target" data-admin-user-filter="all" type="button" data-i18n="adminUsersFilterAll">Все</button>
+            <button class="segment touch-target" data-admin-user-filter="investors" type="button" data-i18n="adminUsersFilterInvestors">С депозитами</button>
+            <button class="segment touch-target" data-admin-user-filter="blocked" type="button" data-i18n="adminUsersFilterBlocked">Заблокированные</button>
+          </div>
           <div id="adminUsersList" class="stack-list"></div>
         </div>
         <div id="admin-deposits" class="admin-section"><div id="adminDepositsList" class="stack-list"></div></div>
@@ -214,6 +277,7 @@
             <div class="form-heading"><span class="form-icon">⌁</span><div><strong data-i18n="newBroadcast">Новая рассылка</strong><small data-i18n="blockedExcluded">Заблокированные пользователи исключаются автоматически</small></div></div>
             <label class="input-label" for="broadcastAudience" data-i18n="audience">Аудитория</label>
             <select id="broadcastAudience" class="select-input"><option value="all" data-i18n="allUsers">Все пользователи</option><option value="investors" data-i18n="investors">Только инвесторы</option><option value="partners" data-i18n="partners">Только партнёры</option></select>
+            <p id="broadcastAudienceCount" class="field-hint"></p>
             <label class="input-label" for="broadcastText" data-i18n="message">Сообщение</label>
             <div class="format-toolbar" aria-label="Форматирование">
               <button type="button" data-format-tag="b"><b>B</b></button>
@@ -225,6 +289,7 @@
             </div>
             <textarea id="broadcastText" class="textarea-input" maxlength="4096" rows="7" placeholder="Текст рассылки..."></textarea>
             <p class="field-hint" data-i18n="formatHint">Форматирование отправляется в Telegram как HTML.</p>
+            <p id="broadcastLengthHint" class="field-hint"></p>
 
             <div class="broadcast-attachment">
               <label class="attachment-button" for="broadcastImage"><span>▣</span><span data-i18n="attachImage">Прикрепить картинку</span></label>
@@ -236,7 +301,21 @@
               <div class="section-row"><div><span class="input-label" data-i18n="broadcastButtons">Кнопки</span><small class="field-hint" data-i18n="broadcastButtonsHint">До 8 кнопок-ссылок под сообщением.</small></div><button id="addBroadcastButton" class="compact-btn" type="button" data-i18n="addButton">+ Кнопка</button></div>
               <div id="broadcastButtonsBuilder" class="broadcast-buttons-builder"></div>
             </div>
-            <button id="sendBroadcast" class="primary-btn" type="button" data-i18n="send">Отправить</button>
+            <section class="broadcast-preview-block">
+              <div class="section-row"><div><span class="input-label" data-i18n="broadcastPreview">Предпросмотр</span><small class="field-hint" data-i18n="broadcastPreviewHint">Так сообщение увидят в Telegram после очистки HTML.</small></div></div>
+              <div class="telegram-preview">
+                <img id="broadcastPreviewImage" class="telegram-preview-image hidden" alt="">
+                <div id="broadcastPreviewText" class="telegram-preview-text"></div>
+                <div id="broadcastPreviewButtons" class="telegram-preview-buttons"></div>
+              </div>
+              <p id="broadcastPreviewNotice" class="field-hint hidden"></p>
+            </section>
+
+            <div class="broadcast-send-actions">
+              <button id="testBroadcast" class="admin-action" type="button" data-i18n="broadcastTestSend">Тест себе</button>
+              <button id="sendBroadcast" class="primary-btn" type="button" data-i18n="send">Отправить</button>
+            </div>
+            <p class="field-hint" data-i18n="broadcastTestHint">Тест уходит только вам в Telegram и проверяет текст и форматирование. Картинка и кнопки в тесте не отправляются.</p>
           </article>
           <div id="adminBroadcastList" class="stack-list"></div>
         </div>
@@ -245,7 +324,7 @@
             <div class="form-heading"><span class="form-icon">🛡</span><div><strong data-i18n="adminManagement">Управление администраторами</strong><small data-i18n="adminManagementHint">Полный доступ к админ-панели и команде /admin.</small></div></div>
             <label class="input-label" for="adminGrantInput" data-i18n="adminIdentifier">Telegram ID или @username</label>
             <div class="input-shell admin-grant-input"><input id="adminGrantInput" autocomplete="off" inputmode="text" placeholder="123456789 / username"><button id="grantAdminBtn" class="input-action" type="button" data-i18n="addAdmin">Добавить</button></div>
-            <p class="field-hint" data-i18n="adminUserMustExist">Пользователь должен хотя бы один раз открыть GFORT, чтобы появиться в базе.</p>
+            <p class="field-hint" data-i18n="adminUserMustExist">Пользователь должен хотя бы один раз открыть NOVERA, чтобы появиться в базе.</p>
           </article>
           <div id="adminAdminsList" class="stack-list"></div>
         </div>
@@ -282,6 +361,6 @@
   </div>
 
   <div id="toast" class="toast" aria-live="polite"></div>
-  <script src="/assets/app.js?v=gfort-v10-6-admin-controls-1"></script>
+  <script src="/assets/app.js?v=novera-master-followup-3"></script>
 </body>
 </html>

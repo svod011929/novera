@@ -1,0 +1,155 @@
+/**
+ * NOVERA design tokens — single source for color, type, space, radius, elevation.
+ * Loaded after styles.css so legacy layout keeps structure while brand values win.
+ * Prefer these variables in new CSS; avoid one-off hex in feature work.
+ */
+
+:root{
+  /* —— Color (semantic) —— */
+  --color-bg:#00050A;
+  --color-bg-2:#001428;
+  --color-surface:rgba(6,18,36,.88);
+  --color-surface-2:rgba(8,22,44,.92);
+  --color-surface-3:rgba(3,10,22,.96);
+  --color-border:rgba(92,225,255,.18);
+  --color-text:#F4FBFF;
+  --color-muted:#8FB4D2;
+  --color-accent:#5CE1FF;
+  --color-accent-2:#8B5CFF;
+  --color-accent-hot:#3AA8FF;
+  --color-success:#54F0AA;
+  --color-danger:#FF6D8A;
+  --color-warning:#FFD36A;
+  --color-info:#5CE1FF;
+  --color-violet:#8B5CFF;
+  --color-magenta:#C45CFF;
+
+  /* —— Legacy aliases (styles.css / components) —— */
+  --bg:var(--color-bg);
+  --bg-2:var(--color-bg-2);
+  --panel:var(--color-surface);
+  --panel-2:var(--color-surface-2);
+  --panel-3:var(--color-surface-3);
+  --line:var(--color-border);
+  --text:var(--color-text);
+  --muted:var(--color-muted);
+  --accent:var(--color-accent);
+  --accent-2:var(--color-accent-2);
+  --accent-hot:var(--color-accent-hot);
+  --green:var(--color-success);
+  --red:var(--color-danger);
+  --blue:var(--color-info);
+  --yellow:var(--color-warning);
+  --violet:var(--color-violet);
+  --magenta:var(--color-magenta);
+  --success:var(--color-success);
+  --danger:var(--color-danger);
+  --warning:var(--color-warning);
+  --info:var(--color-info);
+
+  /* —— Gradients —— */
+  --brand-gradient:linear-gradient(115deg,#9AF6FF 0%,#5CE1FF 38%,#4A8CFF 68%,#8B5CFF 100%);
+  --cta-gradient:linear-gradient(115deg,#5CE1FF 0%,#3AA8FF 48%,#8B5CFF 100%);
+  --progress-gradient:linear-gradient(90deg,#8B5CFF 0%,#3AA8FF 42%,#5CE1FF 100%);
+  --surface-gradient:linear-gradient(180deg, rgba(8,22,44,.92), rgba(4,12,26,.94));
+
+  /* —— Typography —— */
+  --font-display:"Orbitron",ui-sans-serif,system-ui,sans-serif;
+  --font-body:"Manrope",ui-sans-serif,system-ui,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --text-2xs:9px;
+  --text-xs:10px;
+  --text-sm:12px;
+  --text-md:14px;
+  --text-lg:18px;
+  --text-xl:26px;
+  --text-display:clamp(30px,9.5vw,46px);
+  --leading-tight:1.05;
+  --leading-body:1.55;
+  --tracking-label:.16em;
+  --tracking-brand:.12em;
+
+  /* —— Spacing (4px base) —— */
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:24px;
+  --space-6:32px;
+  --space-7:48px;
+  --page-gutter:16px;
+  --content-max:780px;
+
+  /* —— Radius —— */
+  --radius-sm:12px;
+  --radius-md:16px;
+  --radius-lg:20px;
+  --radius-xl:26px;
+  --radius-pill:999px;
+  --radius:var(--radius-lg);
+
+  /* —— Elevation / focus —— */
+  --shadow-sm:0 8px 24px rgba(0,4,16,.28);
+  --shadow-md:0 16px 42px rgba(0,0,0,.28);
+  --shadow-lg:0 22px 60px rgba(0,4,16,.55);
+  --shadow:var(--shadow-lg);
+  --focus-ring:0 0 0 3px rgba(92,225,255,.16), 0 0 22px rgba(92,225,255,.12);
+  --glow-cyan:0 0 24px rgba(92,225,255,.35);
+  --glow-violet:0 0 18px rgba(139,92,255,.22);
+
+  /* —— Motion —— */
+  --ease-out:cubic-bezier(.22,1,.36,1);
+  --duration-fast:160ms;
+  --duration-med:280ms;
+
+  /* —— Touch / shell —— */
+  --touch-min:44px;
+  --nav-height:92px;
+  --tg-height:100vh;
+
+  font-family:var(--font-body);
+  color-scheme:dark;
+}
+
+/* —— Layout primitives —— */
+.stack{display:grid;gap:var(--space-3)}
+.stack-sm{display:grid;gap:var(--space-2)}
+.stack-lg{display:grid;gap:var(--space-4)}
+.cluster{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
+.cluster-spread{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-3)}
+.surface{
+  background:var(--surface-gradient);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:inset 0 1px 0 rgba(154,246,255,.05), var(--shadow-md);
+}
+.eyebrow{
+  margin:0;
+  font-family:var(--font-display);
+  font-size:var(--text-xs);
+  font-weight:600;
+  letter-spacing:var(--tracking-label);
+  text-transform:uppercase;
+  color:var(--accent);
+}
+.money{
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;
+  font-weight:800;
+}
+.touch-target{min-height:var(--touch-min);min-width:var(--touch-min)}
+.field-focus:focus-visible,
+.touch-target:focus-visible{
+  outline:none;
+  box-shadow:var(--focus-ring);
+}
+
+@media(max-width:430px){
+  :root{--page-gutter:14px}
+}
+@media(max-width:390px){
+  :root{--page-gutter:12px;--radius:18px}
+}
+@media(max-width:360px){
+  :root{--page-gutter:12px;--text-display:clamp(28px,9.2vw,36px)}
+}

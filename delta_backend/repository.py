@@ -200,6 +200,28 @@ CREATE TABLE IF NOT EXISTS runtime_settings (
     updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS chain_config_state (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    status TEXT NOT NULL DEFAULT 'bootstrap'
+        CHECK (status IN ('bootstrap', 'configured', 'active', 'degraded')),
+    active_generation TEXT,
+    pending_generation TEXT,
+    public_fingerprint TEXT,
+    last_error_code TEXT,
+    updated_by INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chain_config_activations (
+    operation_key TEXT PRIMARY KEY,
+    generation TEXT NOT NULL,
+    actor_id INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('activated', 'failed')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS balance_adjustments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
@@ -274,6 +296,19 @@ CREATE TABLE IF NOT EXISTS admin_investment_openings (
 CREATE INDEX IF NOT EXISTS idx_admin_investment_openings_user
 ON admin_investment_openings(user_id, created_at DESC, deposit_id DESC);
 
+CREATE TABLE IF NOT EXISTS admin_control_idempotency (
+    operation_key TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    actor_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    payload_fingerprint TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_control_idempotency_user
+ON admin_control_idempotency(user_id, kind, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS broadcasts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_by INTEGER NOT NULL REFERENCES users(telegram_id),
@@ -336,6 +371,13 @@ ON user_notifications(user_id, read_at, id DESC);
 CREATE INDEX IF NOT EXISTS idx_user_notifications_delivery
 ON user_notifications(telegram_status, telegram_updated_at, id);
 """
+
+
+BROADCAST_AUDIENCE_FILTERS = {
+    "all": "1 = 1",
+    "investors": "EXISTS (SELECT 1 FROM deposits WHERE deposits.user_id = users.telegram_id)",
+    "partners": "EXISTS (SELECT 1 FROM users AS child WHERE child.referrer_id = users.telegram_id)",
+}
 
 
 class RepositoryError(RuntimeError):
@@ -606,6 +648,177 @@ class DeltaRepository:
                 ),
             )
         return await self.get_runtime_settings()
+
+    async def get_chain_config_state(self) -> dict[str, object]:
+        connection = self._connection()
+        async with self._lock:
+            cursor = await connection.execute(
+                "SELECT status, active_generation, pending_generation, "
+                "public_fingerprint, last_error_code, updated_by, updated_at "
+                "FROM chain_config_state WHERE singleton = 1"
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return {
+                "status": "bootstrap",
+                "active_generation": None,
+                "pending_generation": None,
+                "public_fingerprint": None,
+                "last_error_code": None,
+                "updated_by": 0,
+                "updated_at": 0,
+            }
+        return dict(row)
+
+    async def record_chain_config_staged(
+        self,
+        generation: str,
+        public_fingerprint: str,
+        actor_id: int,
+        reason: str,
+    ) -> dict[str, object]:
+        now = int(time.time())
+        reason_audit = (
+            f"sha256:{hashlib.sha256(reason.encode('utf-8')).hexdigest()[:16]};"
+            f"length={len(reason)}"
+        )
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT status FROM chain_config_state WHERE singleton = 1"
+            )
+            row = await cursor.fetchone()
+            status = "active" if row and str(row["status"]) == "active" else "configured"
+            await connection.execute(
+                """
+                INSERT INTO chain_config_state(
+                    singleton, status, pending_generation, public_fingerprint,
+                    last_error_code, updated_by, updated_at
+                ) VALUES (1, ?, ?, ?, NULL, ?, ?)
+                ON CONFLICT(singleton) DO UPDATE SET
+                    status=excluded.status,
+                    pending_generation=excluded.pending_generation,
+                    public_fingerprint=excluded.public_fingerprint,
+                    last_error_code=NULL,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """,
+                (status, generation, public_fingerprint, int(actor_id), now),
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) VALUES (?, ?, ?)",
+                (
+                    "chain_config_staged",
+                    f"owner={int(actor_id)};generation={generation};"
+                    f"fingerprint={public_fingerprint};reason={reason_audit}",
+                    now,
+                ),
+            )
+        return await self.get_chain_config_state()
+
+    async def get_chain_activation(self, operation_key: str) -> dict[str, object] | None:
+        connection = self._connection()
+        async with self._lock:
+            cursor = await connection.execute(
+                "SELECT operation_key, generation, actor_id, reason, status, "
+                "created_at, updated_at FROM chain_config_activations "
+                "WHERE operation_key = ?",
+                (operation_key,),
+            )
+            row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def record_chain_config_activated(
+        self,
+        operation_key: str,
+        generation: str,
+        public_fingerprint: str,
+        actor_id: int,
+        reason: str,
+    ) -> dict[str, object]:
+        now = int(time.time())
+        reason_audit = (
+            f"sha256:{hashlib.sha256(reason.encode('utf-8')).hexdigest()[:16]};"
+            f"length={len(reason)}"
+        )
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT generation, actor_id, status FROM chain_config_activations "
+                "WHERE operation_key = ?",
+                (operation_key,),
+            )
+            existing = await cursor.fetchone()
+            if existing is not None:
+                if (
+                    str(existing["generation"]) != generation
+                    or int(existing["actor_id"]) != int(actor_id)
+                ):
+                    raise RepositoryError("Idempotency key was already used")
+                return {
+                    "generation": str(existing["generation"]),
+                    "status": str(existing["status"]),
+                    "reused": True,
+                }
+            await connection.execute(
+                "INSERT INTO chain_config_activations("
+                "operation_key, generation, actor_id, reason, status, created_at, updated_at"
+                ") VALUES (?, ?, ?, ?, 'activated', ?, ?)",
+                (operation_key, generation, int(actor_id), reason_audit, now, now),
+            )
+            await connection.execute(
+                """
+                INSERT INTO chain_config_state(
+                    singleton, status, active_generation, pending_generation,
+                    public_fingerprint, last_error_code, updated_by, updated_at
+                ) VALUES (1, 'active', ?, NULL, ?, NULL, ?, ?)
+                ON CONFLICT(singleton) DO UPDATE SET
+                    status='active',
+                    active_generation=excluded.active_generation,
+                    pending_generation=NULL,
+                    public_fingerprint=excluded.public_fingerprint,
+                    last_error_code=NULL,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """,
+                (generation, public_fingerprint, int(actor_id), now),
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) VALUES (?, ?, ?)",
+                (
+                    "chain_config_activated",
+                    f"owner={int(actor_id)};generation={generation};"
+                    f"fingerprint={public_fingerprint};reason={reason_audit}",
+                    now,
+                ),
+            )
+        return {"generation": generation, "status": "activated", "reused": False}
+
+    async def mark_chain_config_runtime(
+        self,
+        status: str,
+        *,
+        generation: str | None,
+        public_fingerprint: str | None,
+        error_code: str | None = None,
+    ) -> None:
+        if status not in {"bootstrap", "configured", "active", "degraded"}:
+            raise ValueError("Invalid chain setup state")
+        now = int(time.time())
+        async with self.transaction() as connection:
+            await connection.execute(
+                """
+                INSERT INTO chain_config_state(
+                    singleton, status, active_generation, public_fingerprint,
+                    last_error_code, updated_by, updated_at
+                ) VALUES (1, ?, ?, ?, ?, 0, ?)
+                ON CONFLICT(singleton) DO UPDATE SET
+                    status=excluded.status,
+                    active_generation=excluded.active_generation,
+                    public_fingerprint=excluded.public_fingerprint,
+                    last_error_code=excluded.last_error_code,
+                    updated_at=excluded.updated_at
+                """,
+                (status, generation, public_fingerprint, error_code, now),
+            )
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[aiosqlite.Connection]:
@@ -2396,20 +2609,92 @@ class DeltaRepository:
             "referral_level_adjustments": referral_level_adjustments,
         }
 
+    @staticmethod
+    def _admin_control_operation_key(
+        kind: str, actor_id: int, user_id: int, idempotency_key: str
+    ) -> str:
+        clean = str(idempotency_key or "").strip()
+        if not clean or len(clean) > 128:
+            raise RepositoryError("Invalid Idempotency-Key")
+        return f"admin-control:{kind}:{int(actor_id)}:{int(user_id)}:{clean}"
+
+    async def _reuse_admin_control(
+        self,
+        connection: aiosqlite.Connection,
+        *,
+        operation_key: str,
+        fingerprint: str,
+    ) -> dict[str, object] | None:
+        cursor = await connection.execute(
+            "SELECT payload_fingerprint, result_json FROM admin_control_idempotency "
+            "WHERE operation_key = ?",
+            (operation_key,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        if str(row["payload_fingerprint"]) != fingerprint:
+            raise RepositoryError("Idempotency key was already used")
+        result = json.loads(str(row["result_json"]))
+        if isinstance(result, dict):
+            result["reused"] = True
+            return result
+        raise RepositoryError("Idempotency key was already used")
+
+    async def _store_admin_control(
+        self,
+        connection: aiosqlite.Connection,
+        *,
+        operation_key: str,
+        kind: str,
+        actor_id: int,
+        user_id: int,
+        fingerprint: str,
+        result: dict[str, object],
+        created_at: int,
+    ) -> None:
+        await connection.execute(
+            """
+            INSERT INTO admin_control_idempotency(
+                operation_key, kind, actor_id, user_id, payload_fingerprint,
+                result_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                operation_key,
+                kind,
+                int(actor_id),
+                int(user_id),
+                fingerprint,
+                json.dumps(result, separators=(",", ":"), sort_keys=True),
+                int(created_at),
+            ),
+        )
+
     async def admin_set_referral_balance(
         self,
         user_id: int,
         new_balance_minor: int,
         changed_by: int,
         reason: str,
-    ) -> dict[str, int]:
+        idempotency_key: str,
+    ) -> dict[str, object]:
         if new_balance_minor < 0:
             raise RepositoryError("Referral balance cannot be negative")
         clean_reason = reason.strip()[:500]
         if not clean_reason:
             raise RepositoryError("Referral balance adjustment reason is required")
+        operation_key = self._admin_control_operation_key(
+            "referral-balance", changed_by, user_id, idempotency_key
+        )
+        fingerprint = f"{int(new_balance_minor)}|{clean_reason}"
         now = int(time.time())
         async with self.transaction() as connection:
+            reused = await self._reuse_admin_control(
+                connection, operation_key=operation_key, fingerprint=fingerprint
+            )
+            if reused is not None:
+                return reused
             cursor = await connection.execute(
                 "SELECT 1 FROM users WHERE telegram_id = ?", (user_id,)
             )
@@ -2452,7 +2737,22 @@ class DeltaRepository:
                 data={"target_view": "team", "balance_minor": int(new_balance_minor)},
                 created_at=now,
             )
-        return {"old_balance_minor": old_balance, "new_balance_minor": int(new_balance_minor)}
+            result = {
+                "old_balance_minor": old_balance,
+                "new_balance_minor": int(new_balance_minor),
+                "reused": False,
+            }
+            await self._store_admin_control(
+                connection,
+                operation_key=operation_key,
+                kind="referral-balance",
+                actor_id=changed_by,
+                user_id=user_id,
+                fingerprint=fingerprint,
+                result=result,
+                created_at=now,
+            )
+            return result
 
     async def admin_set_referral_level(
         self,
@@ -2460,14 +2760,24 @@ class DeltaRepository:
         unlocked_level: int,
         changed_by: int,
         reason: str,
-    ) -> dict[str, int]:
+        idempotency_key: str,
+    ) -> dict[str, object]:
         if unlocked_level < 0 or unlocked_level > 5:
             raise RepositoryError("Referral level must be between 0 and 5")
         clean_reason = reason.strip()[:500]
         if not clean_reason:
             raise RepositoryError("Referral level adjustment reason is required")
+        operation_key = self._admin_control_operation_key(
+            "referral-level", changed_by, user_id, idempotency_key
+        )
+        fingerprint = f"{int(unlocked_level)}|{clean_reason}"
         now = int(time.time())
         async with self.transaction() as connection:
+            reused = await self._reuse_admin_control(
+                connection, operation_key=operation_key, fingerprint=fingerprint
+            )
+            if reused is not None:
+                return reused
             cursor = await connection.execute(
                 "SELECT 1 FROM users WHERE telegram_id = ?", (user_id,)
             )
@@ -2537,7 +2847,22 @@ class DeltaRepository:
                 data={"target_view": "team", "manual_level": int(unlocked_level)},
                 created_at=now,
             )
-        return {"old_level": old_level, "unlocked_level": int(unlocked_level)}
+            result = {
+                "old_level": old_level,
+                "unlocked_level": int(unlocked_level),
+                "reused": False,
+            }
+            await self._store_admin_control(
+                connection,
+                operation_key=operation_key,
+                kind="referral-level",
+                actor_id=changed_by,
+                user_id=user_id,
+                fingerprint=fingerprint,
+                result=result,
+                created_at=now,
+            )
+            return result
 
     async def admin_open_investment(
         self,
@@ -2650,14 +2975,24 @@ class DeltaRepository:
         new_balance_minor: int,
         changed_by: int,
         reason: str,
-    ) -> dict[str, int]:
+        idempotency_key: str,
+    ) -> dict[str, object]:
         if new_balance_minor < 0:
             raise RepositoryError("Balance cannot be negative")
-        now = int(time.time())
         clean_reason = reason.strip()[:500]
         if not clean_reason:
             raise RepositoryError("Balance adjustment reason is required")
+        operation_key = self._admin_control_operation_key(
+            "user-balance", changed_by, user_id, idempotency_key
+        )
+        fingerprint = f"{int(new_balance_minor)}|{clean_reason}"
+        now = int(time.time())
         async with self.transaction() as connection:
+            reused = await self._reuse_admin_control(
+                connection, operation_key=operation_key, fingerprint=fingerprint
+            )
+            if reused is not None:
+                return reused
             cursor = await connection.execute(
                 "SELECT manual_balance_minor FROM users WHERE telegram_id = ?",
                 (user_id,),
@@ -2695,7 +3030,22 @@ class DeltaRepository:
                     now,
                 ),
             )
-        return {"old_balance_minor": old_balance, "new_balance_minor": new_balance_minor}
+            result = {
+                "old_balance_minor": old_balance,
+                "new_balance_minor": int(new_balance_minor),
+                "reused": False,
+            }
+            await self._store_admin_control(
+                connection,
+                operation_key=operation_key,
+                kind="user-balance",
+                actor_id=changed_by,
+                user_id=user_id,
+                fingerprint=fingerprint,
+                result=result,
+                created_at=now,
+            )
+            return result
 
     async def admin_set_user_wallet(
         self,
@@ -2882,14 +3232,10 @@ class DeltaRepository:
         media_path: str | None = None,
         buttons: list[dict[str, str]] | None = None,
     ) -> dict[str, int | str]:
-        if audience not in {"all", "investors", "partners"}:
+        if audience not in BROADCAST_AUDIENCE_FILTERS:
             raise RepositoryError("Unsupported broadcast audience")
         now = int(time.time())
-        filters = {
-            "all": "1 = 1",
-            "investors": "EXISTS (SELECT 1 FROM deposits WHERE deposits.user_id = users.telegram_id)",
-            "partners": "EXISTS (SELECT 1 FROM users AS child WHERE child.referrer_id = users.telegram_id)",
-        }
+        filters = BROADCAST_AUDIENCE_FILTERS
         async with self.transaction() as connection:
             buttons_json = json.dumps(buttons or [], ensure_ascii=False, separators=(",", ":"))
             cursor = await connection.execute(
@@ -3050,4 +3396,128 @@ class DeltaRepository:
                 "SELECT * FROM broadcasts ORDER BY created_at DESC LIMIT ?",
                 (limit,),
             )
-            return [dict(row) for row in await cursor.fetchall()]
+            broadcasts = [dict(row) for row in await cursor.fetchall()]
+            for broadcast in broadcasts:
+                cursor = await connection.execute(
+                    """
+                    SELECT
+                        SUM(CASE WHEN status IN ('queued', 'sending') THEN 1 ELSE 0 END) AS pending,
+                        MAX(CASE WHEN status = 'failed' THEN last_error ELSE NULL END) AS last_error
+                    FROM broadcast_deliveries
+                    WHERE broadcast_id = ?
+                    """,
+                    (broadcast["id"],),
+                )
+                row = await cursor.fetchone()
+                broadcast["pending_count"] = int((row["pending"] if row else 0) or 0)
+                broadcast["last_error"] = str(row["last_error"] or "") if row else ""
+            return broadcasts
+
+    async def broadcast_audience_counts(self) -> dict[str, int]:
+        """Recipient counts per audience, using the same filters as create_broadcast."""
+        connection = self._connection()
+        counts: dict[str, int] = {}
+        async with self._lock:
+            for audience, condition in BROADCAST_AUDIENCE_FILTERS.items():
+                cursor = await connection.execute(
+                    f"SELECT COUNT(*) AS value FROM users WHERE users.blocked = 0 AND {condition}"
+                )
+                counts[audience] = int((await cursor.fetchone())["value"] or 0)
+        return counts
+
+    async def retry_broadcast(self, broadcast_id: int) -> dict[str, int]:
+        """Requeue deliveries that failed. Already delivered recipients are never resent."""
+        now = int(time.time())
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT id FROM broadcasts WHERE id = ?",
+                (broadcast_id,),
+            )
+            if await cursor.fetchone() is None:
+                raise RepositoryError("Broadcast not found")
+            cursor = await connection.execute(
+                "UPDATE broadcast_deliveries SET status = 'queued', last_error = NULL, sent_at = NULL "
+                "WHERE broadcast_id = ? AND status = 'failed'",
+                (broadcast_id,),
+            )
+            requeued = int(cursor.rowcount or 0)
+            cursor = await connection.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN status IN ('queued', 'sending') THEN 1 ELSE 0 END) AS pending
+                FROM broadcast_deliveries
+                WHERE broadcast_id = ?
+                """,
+                (broadcast_id,),
+            )
+            counts = await cursor.fetchone()
+            pending = int(counts["pending"] or 0)
+            await connection.execute(
+                """
+                UPDATE broadcasts
+                SET delivered_count = ?, failed_count = ?,
+                    status = CASE WHEN ? = 0 THEN status ELSE 'queued' END,
+                    completed_at = CASE WHEN ? = 0 THEN completed_at ELSE NULL END
+                WHERE id = ?
+                """,
+                (
+                    int(counts["delivered"] or 0),
+                    int(counts["failed"] or 0),
+                    pending,
+                    pending,
+                    broadcast_id,
+                ),
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) VALUES (?, ?, ?)",
+                (
+                    "broadcast_retried",
+                    f"broadcast={broadcast_id};requeued={requeued}",
+                    now,
+                ),
+            )
+        return {"requeued": requeued, "pending": pending}
+
+    async def queue_broadcast_self_test(
+        self,
+        admin_id: int,
+        *,
+        telegram_html: str,
+        preview: str,
+    ) -> bool:
+        """Send the composed message to the acting admin only, via the notification worker.
+
+        Nothing is written to `broadcasts`, so a test can never reach real users.
+        """
+        now = int(time.time())
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT telegram_id FROM users WHERE telegram_id = ?",
+                (admin_id,),
+            )
+            if await cursor.fetchone() is None:
+                raise RepositoryError("User not found")
+            digest = hashlib.sha256(telegram_html.encode("utf-8")).hexdigest()[:16]
+            queued = await self._queue_notification(
+                connection,
+                user_id=admin_id,
+                category="system",
+                event_type="admin_broadcast_test",
+                title="Тест рассылки",
+                body=preview,
+                telegram_html=telegram_html,
+                dedupe_key=f"broadcast-test:{admin_id}:{now}:{digest}",
+                data={"target_view": "admin"},
+                created_at=now,
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) VALUES (?, ?, ?)",
+                (
+                    "broadcast_test_sent",
+                    f"admin={admin_id};digest={digest}",
+                    now,
+                ),
+            )
+        return queued

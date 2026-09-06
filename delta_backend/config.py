@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     bot_token: SecretStr = SecretStr("")
     bot_token_file: Path | None = None
     admin_ids: str = ""
+    owner_ids: str = ""
     log_channel_id: int | None = None
     support_url: str = "https://t.me/your_support"
     chat_url: str = "https://t.me/your_chat"
@@ -129,6 +130,7 @@ class Settings(BaseSettings):
     payout_keystore_path: Path | None = None
     payout_keystore_password: SecretStr | None = None
     payout_keystore_password_file: Path | None = None
+    runtime_config_key_file: Path | None = None
     scan_start_block: int = 0
     confirmation_blocks: int = 12
     scan_block_chunk: int = 1500
@@ -164,6 +166,17 @@ class Settings(BaseSettings):
             if item:
                 result.add(int(item))
         return result
+
+    @property
+    def owner_id_set(self) -> set[int]:
+        configured: set[int] = set()
+        for item in self.owner_ids.split(","):
+            item = item.strip()
+            if item:
+                configured.add(int(item))
+        # Backward-compatible local/test default. Production bootstrap writes
+        # OWNER_IDS explicitly, and dynamic administrator grants never enter it.
+        return configured or self.admin_id_set
 
     @model_validator(mode="after")
     def validate_runtime(self) -> "Settings":
