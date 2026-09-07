@@ -144,7 +144,7 @@ class EvmTokenClient:
         ]
         self._preferred_http_index = 0
         self._configured_log_chunk = max(1, int(settings.scan_block_chunk))
-        self._adaptive_log_chunk = min(self._configured_log_chunk, 10)
+        self._adaptive_log_chunk = self._configured_log_chunk
         logger.info(
             "eth_getLogs adaptive chunk initialized: effective=%s configured_ceiling=%s",
             self._adaptive_log_chunk,

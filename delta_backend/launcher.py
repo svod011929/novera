@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 from urllib.parse import urlencode
 
@@ -13,11 +14,19 @@ from aiogram.types import (
 )
 
 from .amounts import minor_to_text
+from .config import Settings
 from .repository import DeltaRepository
 from .telegram_auth import TelegramUser
 
 logger = logging.getLogger(__name__)
-# GFORT V10.3 partner statistics command + notification entry point
+# NOVERA partner statistics command + notification entry point
+
+_PLACEHOLDER_LINK_MARKERS = (
+    "your_support",
+    "your_chat",
+    "example.com",
+    "t.me/your_",
+)
 
 
 def _webapp_url(
@@ -38,6 +47,65 @@ def _webapp_url(
         return base
     separator = "&" if "?" in base else "?"
     return f"{base}{separator}{urlencode(params)}"
+
+
+def _is_public_link(url: str | None) -> bool:
+    if not url:
+        return False
+    candidate = url.strip()
+    if not candidate.startswith(("https://", "http://", "tg://")):
+        return False
+    lowered = candidate.lower()
+    return not any(marker in lowered for marker in _PLACEHOLDER_LINK_MARKERS)
+
+
+def _html_link(label: str, url: str) -> str:
+    return f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
+
+
+def _build_welcome_text(
+    *,
+    bot_username: str | None,
+    support_url: str | None,
+    chat_url: str | None,
+) -> str:
+    bot_line = ""
+    if bot_username:
+        handle = bot_username.lstrip("@")
+        bot_line = f"🤖 {_html_link(f'@{handle}', f'https://t.me/{handle}')}"
+
+    links: list[str] = []
+    if bot_line:
+        links.append(bot_line)
+    if _is_public_link(support_url):
+        links.append(f"🛟 {_html_link('Поддержка', support_url or '')}")
+    if _is_public_link(chat_url):
+        links.append(f"👥 {_html_link('Чат', chat_url or '')}")
+    footer = " · ".join(links)
+
+    return (
+        "💠 <b>NOVERA</b>\n"
+        "<i>Digital Capital Ecosystem</i>\n\n"
+        "Цифровая инвест-платформа: крипто-арбитраж, авто-обработка рыночных "
+        "дисбалансов и партнёрская инфраструктура в одной экосистеме.\n\n"
+        "──────────────\n\n"
+        "💼 <b>Программа · 10% / 24H</b>\n"
+        "• Цикл — <b>20 дней</b>\n"
+        "• Начисление — <b>10% / день</b>\n"
+        "• Итого — <b>200%</b> + возврат депозита на <b>20-й день</b>\n\n"
+        "Пример: <b>100 USDT</b> → <b>10 USDT/день</b> → <b>200 USDT</b> за цикл.\n"
+        "После цикла можно открыть новый депозит на актуальных условиях.\n\n"
+        "──────────────\n\n"
+        "🤝 <b>Partner Network</b>\n"
+        "<code>L1 8%</code> · деп. 50 · линия 100\n"
+        "<code>L2 4%</code> · деп. 100 · линия 300\n"
+        "<code>L3 2,5%</code> · деп. 300 · линия 500\n"
+        "<code>L4 1,5%</code> · деп. 500 · линия 1 500\n"
+        "<code>L5 1%</code> · деп. 1 000 · линия 5 000\n\n"
+        "──────────────\n\n"
+        "⚡ Арбитраж · Авто-начисления · Партнёрка"
+        + (f"\n\n{footer}" if footer else "")
+    )
 
 
 def _telegram_user_from_message(
@@ -76,6 +144,7 @@ def create_dispatcher(
     *,
     repository: DeltaRepository | None = None,
     admin_ids: set[int] | frozenset[int] | None = None,
+    chain_settings: Settings | None = None,
 ) -> Dispatcher:
     router = Router()
     admins = set(admin_ids or ())
@@ -85,10 +154,16 @@ def create_dispatcher(
         language = (message.from_user.language_code or "ru") if message.from_user else "ru"
         if language.startswith("en"):
             button = "Open NOVERA"
+            support_label = "Support"
+            chat_label = "Chat"
         elif language.startswith("uk"):
             button = "Відкрити NOVERA"
+            support_label = "Підтримка"
+            chat_label = "Чат"
         else:
             button = "Открыть NOVERA"
+            support_label = "Поддержка"
+            chat_label = "Чат"
 
         start_param = None
         if message.text:
@@ -102,72 +177,41 @@ def create_dispatcher(
             start_param=start_param,
         )
         launch_url = _webapp_url(miniapp_url, login_token=login_token)
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=button, web_app=WebAppInfo(url=launch_url))]
-            ]
+
+        support_url = str(chain_settings.support_url) if chain_settings is not None else ""
+        chat_url = str(chain_settings.chat_url) if chain_settings is not None else ""
+
+        rows: list[list[InlineKeyboardButton]] = [
+            [InlineKeyboardButton(text=button, web_app=WebAppInfo(url=launch_url))]
+        ]
+        link_row: list[InlineKeyboardButton] = []
+        if _is_public_link(support_url):
+            link_row.append(InlineKeyboardButton(text=support_label, url=support_url))
+        if _is_public_link(chat_url):
+            link_row.append(InlineKeyboardButton(text=chat_label, url=chat_url))
+        if link_row:
+            rows.append(link_row)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+
+        bot_username = None
+        try:
+            me = await message.bot.get_me()
+            bot_username = me.username
+        except Exception:
+            logger.debug("Unable to resolve bot username for welcome message", exc_info=True)
+
+        text = _build_welcome_text(
+            bot_username=bot_username,
+            support_url=support_url,
+            chat_url=chat_url,
+        )
+        await message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
         )
 
-        text = (
-            "💠 <b>NOVERA | DIGITAL CAPITAL ECOSYSTEM</b>\n\n"
-            '<a href="https://t.me/NoveraBot">🤖 @NoveraBot</a>\n\n'
-            "◼︎ <b>О NOVERA</b>\n\n"
-            "NOVERA — цифровая инвестиционная платформа, ориентированная на использование возможностей "
-            "криптовалютного арбитража и автоматизированных торговых механизмов.\n\n"
-            "Платформа анализирует котировки цифровых активов на различных торговых площадках, "
-            "выявляя ценовые расхождения и потенциальные арбитражные возможности.\n\n"
-            "Автоматизированные алгоритмы позволяют обрабатывать рыночные данные и использовать "
-            "возникающие дисбалансы между криптовалютными площадками.\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "💼 <b>ИНВЕСТИЦИОННАЯ ПРОГРАММА</b>\n\n"
-            "<b>10% / 24H</b>\n\n"
-            "• Инвестиционный цикл — <b>20 дней</b>\n"
-            "• Ежедневное начисление — <b>10%</b>\n"
-            "• Общая сумма начислений — <b>200%</b>\n\n"
-            "<b>Пример:</b>\n\n"
-            "Инвестиция <b>100 USDT</b>\n"
-            "→ <b>10 USDT</b> ежедневного начисления\n"
-            "→ <b>20 дней</b>\n"
-            "→ <b>200 USDT</b> начислений за полный цикл.\n"
-            "Ваш депозит будет выплачен на 20 день.\n\n"
-            "После завершения цикла пользователь может открыть новый депозит на условиях, "
-            "действующих на платформе.\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "◼︎ <b>PARTNER NETWORK</b>\n\n"
-            "Развивайте собственную партнёрскую сеть и открывайте дополнительные уровни вознаграждений.\n\n"
-            "<b>LEVEL 01 — 8%</b>\n"
-            "Личный депозит: <b>50 USDT</b>\n"
-            "Объём 1-й линии: <b>100 USDT</b>\n\n"
-            "<b>LEVEL 02 — 4%</b>\n"
-            "Личный депозит: <b>100 USDT</b>\n"
-            "Объём 1-й линии: <b>300 USDT</b>\n\n"
-            "<b>LEVEL 03 — 2,5%</b>\n"
-            "Личный депозит: <b>300 USDT</b>\n"
-            "Объём 1-й линии: <b>500 USDT</b>\n\n"
-            "<b>LEVEL 04 — 1,5%</b>\n"
-            "Личный депозит: <b>500 USDT</b>\n"
-            "Объём 1-й линии: <b>1 500 USDT</b>\n\n"
-            "<b>LEVEL 05 — 1%</b>\n"
-            "Личный депозит: <b>1 000 USDT</b>\n"
-            "Объём 1-й линии: <b>5 000 USDT</b>\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "⚡ <b>NOVERA ECOSYSTEM</b>\n\n"
-            "<b>Automated Infrastructure</b>\n"
-            "Автоматизированная обработка операций и рыночных данных.\n\n"
-            "<b>Arbitrage Analytics</b>\n"
-            "Анализ ценовых расхождений между криптовалютными площадками.\n\n"
-            "<b>Automated Processing</b>\n"
-            "Системная обработка начислений и операций.\n\n"
-            "<b>Partner Infrastructure</b>\n"
-            "Инструменты для построения и развития собственной партнёрской сети.\n\n"
-            "━━━━━━━━━━━━━━━━━━\n\n"
-            "◼︎ <b>ENTER NOVERA</b>\n\n"
-            "NOVERA объединяет криптовалютный арбитраж, автоматизированную инфраструктуру и "
-            "партнёрские инструменты в единой цифровой экосистеме.\n\n"
-            '<a href="https://t.me/NoveraBot">🤖 @NoveraBot</a>\n'
-            '<a href="https://t.me/+CKR1x-wkWZNiNTYx">👥 NOVERA Community</a>'
-        )
-        await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
     async def partner_stats(message: Message) -> None:
         if repository is None or message.from_user is None:
             return
@@ -292,6 +336,7 @@ async def run_launcher(
     *,
     repository: DeltaRepository | None = None,
     admin_ids: set[int] | frozenset[int] | None = None,
+    chain_settings: Settings | None = None,
 ) -> None:
     delay = 2
     while True:
@@ -300,6 +345,7 @@ async def run_launcher(
             miniapp_url,
             repository=repository,
             admin_ids=admin_ids,
+            chain_settings=chain_settings,
         )
         try:
             await bot.set_chat_menu_button(

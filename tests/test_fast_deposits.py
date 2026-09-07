@@ -3,7 +3,69 @@ from types import SimpleNamespace
 import pytest
 
 from delta_backend.models import TransferEvent
+from delta_backend.services.blockchain import EvmTokenClient
 from delta_backend.services.deposit_monitor import DepositMonitor
+
+
+class _SyncRepository:
+    def __init__(self, stored: int | None) -> None:
+        self.stored = stored
+        self.writes: list[tuple[str, int]] = []
+
+    async def get_sync_height(self, key: str) -> int | None:
+        return self.stored
+
+    async def set_sync_height(self, key: str, value: int) -> None:
+        self.stored = value
+        self.writes.append((key, value))
+
+
+@pytest.mark.asyncio
+async def test_scan_cursor_is_advanced_to_configured_start() -> None:
+    settings = SimpleNamespace(
+        token_contract="0x1",
+        chain_id=56,
+        scan_start_block=120_000_000,
+        scan_block_chunk=1500,
+        confirmation_blocks=12,
+        deposit_scan_interval_seconds=120,
+    )
+    repository = _SyncRepository(stored=3_016_373)
+    service = DepositMonitor(
+        repository=repository,
+        settings=settings,
+        chain=SimpleNamespace(),
+    )
+
+    height = await service._initial_height(safe_head=120_500_000)
+
+    assert height == 119_999_999
+    assert repository.stored == 119_999_999
+    assert repository.writes == [(service.sync_key, 119_999_999)]
+
+
+def test_log_scan_starts_at_configured_chunk_ceiling(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        token_contract="0x55d398326f99059ff775485246999027b3197955",
+        treasury_address="0x0000000000000000000000000000000000000001",
+        bsc_rpc_url="https://rpc.example",
+        bsc_rpc_fallback_url=None,
+        bsc_rpc_timeout_seconds=10,
+        bsc_wss_url="wss://rpc.example",
+        scan_block_chunk=1500,
+        payout_seed_phrase=None,
+        payout_private_key=None,
+        payout_keystore_password=None,
+    )
+    monkeypatch.setattr(
+        EvmTokenClient,
+        "_load_private_key",
+        staticmethod(lambda _settings: ""),
+    )
+
+    client = EvmTokenClient(settings)
+
+    assert client.adaptive_log_chunk == 1500
 
 
 @pytest.mark.asyncio

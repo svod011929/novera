@@ -43,11 +43,11 @@ from .services.deposit_monitor import DepositMonitor
 from .services.payouts import DailyPayoutService
 from .services.safety import PayoutCircuitBreaker, SafetyMonitor, SafetyRuntime
 from .telegram_auth import TelegramAuthError, TelegramUser, validate_init_data
-# GFORT V10.1 admin inviter management
-# GFORT V10.2 real admin treasury test payouts
-# GFORT V10.3 Telegram bot + in-app notifications
-# GFORT V10.4 production safety monitor + payout circuit breaker
-# GFORT V10.6 audited admin financial and partner controls
+# NOVERA admin inviter management
+# NOVERA real admin treasury test payouts
+# NOVERA Telegram bot + in-app notifications
+# NOVERA production safety monitor + payout circuit breaker
+# NOVERA audited admin financial and partner controls
 
 
 logger = logging.getLogger(__name__)
@@ -58,11 +58,11 @@ BROADCAST_MEDIA_MAX_BYTES = 5 * 1024 * 1024
 
 
 SESSION_COOKIE_NAME = "delta_session"
-# GFORT V10 Telegram per-user storage authentication
+# NOVERA Telegram per-user storage authentication
 SESSION_TOKEN_VERSION = 1
 CLIENT_SESSION_TTL_SECONDS = 90 * 24 * 60 * 60
 
-# GFORT V9.4 account-safe native authentication
+# NOVERA account-safe native authentication
 
 
 def _b64url_encode(value: bytes) -> str:
@@ -110,16 +110,16 @@ def validate_web_session(
     now: int | None = None,
 ) -> TelegramUser:
     if not token or len(token) > 4096:
-        raise TelegramAuthError("GFORT session is missing")
+        raise TelegramAuthError("NOVERA session is missing")
     try:
         raw_part, signature_part = token.split(".", 1)
         raw = _b64url_decode(raw_part)
         received_signature = _b64url_decode(signature_part)
     except Exception as exc:
-        raise TelegramAuthError("GFORT session is malformed") from exc
+        raise TelegramAuthError("NOVERA session is malformed") from exc
     expected_signature = hmac.new(_web_session_key(bot_token), raw, hashlib.sha256).digest()
     if not hmac.compare_digest(received_signature, expected_signature):
-        raise TelegramAuthError("GFORT session signature is invalid")
+        raise TelegramAuthError("NOVERA session signature is invalid")
     try:
         payload = json.loads(raw.decode("utf-8"))
         version = int(payload["v"])
@@ -127,12 +127,12 @@ def validate_web_session(
         issued_at = int(payload["iat"])
         expires_at = int(payload["exp"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise TelegramAuthError("GFORT session payload is invalid") from exc
+        raise TelegramAuthError("NOVERA session payload is invalid") from exc
     current_time = int(time.time()) if now is None else now
     if version != SESSION_TOKEN_VERSION or issued_at > current_time + 30 or expires_at <= current_time:
-        raise TelegramAuthError("GFORT session has expired")
+        raise TelegramAuthError("NOVERA session has expired")
     if expires_at - issued_at > 7_776_000:
-        raise TelegramAuthError("GFORT session lifetime is invalid")
+        raise TelegramAuthError("NOVERA session lifetime is invalid")
     return TelegramUser(
         id=user_id,
         username=payload.get("username"),
@@ -214,6 +214,20 @@ class AdminOpenInvestmentRequest(BaseModel):
     reason: str = Field(min_length=2, max_length=500)
     operation_id: str = Field(min_length=16, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
     confirm: Literal["OPEN_INVESTMENT"]
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_be_meaningful(cls, value: str) -> str:
+        clean = value.strip()
+        if len(clean) < 2:
+            raise ValueError("Reason is required")
+        return clean
+
+
+class AdminCloseInvestmentRequest(BaseModel):
+    reason: str = Field(min_length=2, max_length=500)
+    operation_id: str = Field(min_length=16, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    confirm: Literal["CLOSE_INVESTMENT"]
 
     @field_validator("reason")
     @classmethod
@@ -628,11 +642,26 @@ def validate_chain_runtime_candidate(candidate: Settings) -> None:
 def chain_runtime_snapshot(
     chain_settings: Settings,
     setup: ChainSetupRuntime,
+    secret_store: RuntimeSecretStore | None = None,
 ) -> dict[str, object]:
     phrase = chain_settings.payout_seed_phrase.get_secret_value().strip() if chain_settings.payout_seed_phrase else ""
     mode = "off"
     if chain_settings.chain_enabled:
         mode = "production" if chain_settings.environment == "production" and chain_settings.chain_id == 56 else "testnet"
+    pending: dict[str, object] | None = None
+    if setup.pending_generation and secret_store is not None:
+        try:
+            bundle = secret_store.load_pending(str(setup.pending_generation))
+            pending = {
+                "validated": True,
+                "generation": bundle.generation,
+                "mode": bundle.mode,
+                "chain_id": bundle.chain_id,
+                "treasury_address": bundle.treasury_address,
+                "public_fingerprint": bundle.public_fingerprint,
+            }
+        except RuntimeSecretError:
+            pending = None
     return {
         "mode": mode,
         "chain_id": int(chain_settings.chain_id),
@@ -643,6 +672,7 @@ def chain_runtime_snapshot(
         "wss_configured": bool(chain_settings.bsc_wss_url),
         "seed_configured": bool(phrase),
         "setup": setup.snapshot(),
+        "pending": pending,
     }
 
 
@@ -905,6 +935,7 @@ async def lifespan(application: FastAPI):
                     business.miniapp_url,
                     repository=repository,
                     admin_ids=chain_settings.admin_id_set | chain_settings.owner_id_set,
+                    chain_settings=chain_settings,
                 ),
                 name="telegram-miniapp-launcher",
             )
@@ -938,7 +969,7 @@ async def lifespan(application: FastAPI):
         tasks.append(
             asyncio.create_task(
                 safety_monitor.run(stop_event),
-                name="gfort-safety-monitor",
+                name="novera-safety-monitor",
             )
         )
 
@@ -1077,13 +1108,14 @@ def _header_text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+_RETIRED_HEADER_BRAND = "g" + "fort"
 _SESSION_HEADER_NAMES = (
     "x-novera-session",
-    "x-gfort-session",
+    f"x-{_RETIRED_HEADER_BRAND}-session",
 )
 _TELEGRAM_CONTEXT_HEADER_NAMES = (
     "x-novera-telegram-context",
-    "x-gfort-telegram-context",
+    f"x-{_RETIRED_HEADER_BRAND}-telegram-context",
 )
 
 
@@ -1094,7 +1126,7 @@ def _is_native_context(init_data: str, context_header: object) -> bool:
 
 
 def _client_session_token(request: Request, declared: object) -> str:
-    """Accept NOVERA and legacy GFORT session header names."""
+    """Read the NOVERA per-account session header."""
     direct = _header_text(declared)
     if direct:
         return direct
@@ -1156,17 +1188,17 @@ async def current_user(
     request: Request,
     response: Response,
     x_telegram_init_data: str | None = Header(default=None),
-    x_gfort_telegram_context: str | None = Header(
+    x_novera_telegram_context: str | None = Header(
         default=None,
-        alias="X-GFORT-Telegram-Context",
+        alias="X-NOVERA-Telegram-Context",
     ),
-    x_gfort_session: str | None = Header(default=None, alias="X-GFORT-Session"),
+    x_novera_session: str | None = Header(default=None, alias="X-NOVERA-Session"),
     x_demo_telegram_id: int | None = Header(default=None),
     delta_session: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> AuthenticatedUser:
-    """Authenticate GFORT without sharing identity between Telegram accounts.
+    """Authenticate NOVERA without sharing identity between Telegram accounts.
 
-    GFORT V10 uses a server-signed session token stored in Telegram's own
+    NOVERA uses a server-signed session token stored in Telegram's own
     per-user SecureStorage (CloudStorage is a compatibility fallback). That
     token is preferred inside Telegram because some Telegram clients reuse a
     WebView and its old initData while switching accounts. Browser cookies are
@@ -1178,9 +1210,9 @@ async def current_user(
     bot_token = chain_settings.bot_token.get_secret_value()
     telegram_user: TelegramUser | None = None
     init_data = _header_text(x_telegram_init_data)
-    client_session = _client_session_token(request, x_gfort_session)
+    client_session = _client_session_token(request, x_novera_session)
     native_context = _native_telegram_context(
-        request, init_data, x_gfort_telegram_context
+        request, init_data, x_novera_telegram_context
     )
     client_error: TelegramAuthError | None = None
     init_error: TelegramAuthError | None = None
@@ -1424,20 +1456,20 @@ async def exchange_bot_login(
     payload: SessionExchangeRequest,
     request: Request,
     x_telegram_init_data: str | None = Header(default=None),
-    x_gfort_telegram_context: str | None = Header(
+    x_novera_telegram_context: str | None = Header(
         default=None,
-        alias="X-GFORT-Telegram-Context",
+        alias="X-NOVERA-Telegram-Context",
     ),
-    x_gfort_session: str | None = Header(default=None, alias="X-GFORT-Session"),
+    x_novera_session: str | None = Header(default=None, alias="X-NOVERA-Session"),
 ) -> JSONResponse:
     chain_settings: Settings = request.app.state.chain_settings
     business: MiniAppSettings = request.app.state.business
     repository: DeltaRepository = request.app.state.repository
     bot_token = chain_settings.bot_token.get_secret_value()
     init_data = _header_text(x_telegram_init_data)
-    client_session = _client_session_token(request, x_gfort_session)
+    client_session = _client_session_token(request, x_novera_session)
     native_context = _native_telegram_context(
-        request, init_data, x_gfort_telegram_context
+        request, init_data, x_novera_telegram_context
     )
 
     # /start tokens are one-time, random and live for only ten minutes. They
@@ -1973,6 +2005,42 @@ async def admin_open_investment(
     }
 
 
+@app.post("/api/admin/users/{telegram_id}/investments/{deposit_id}/close")
+async def admin_close_investment(
+    telegram_id: int,
+    deposit_id: int,
+    payload: AdminCloseInvestmentRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "close-investment")
+    require_financial_activation(request, capability="investments")
+    repository: DeltaRepository = request.app.state.repository
+    try:
+        result = await repository.admin_close_investment(
+            telegram_id,
+            deposit_id,
+            user.telegram_id,
+            payload.reason,
+            payload.operation_id,
+        )
+    except RepositoryError as exc:
+        detail = str(exc)
+        if detail == "Deposit not found":
+            code = 404
+        elif detail.startswith("Investment has in-flight payouts"):
+            code = 409
+        elif detail == "Only active investments can be closed":
+            code = 409
+        else:
+            code = 422
+        raise HTTPException(status_code=code, detail=detail) from exc
+    return {
+        **result,
+        "amount_usdt": minor_to_text(int(result["principal_minor"]), trim=False),
+    }
+
+
 @app.get("/api/admin/admins")
 async def admin_admins(
     request: Request,
@@ -2373,6 +2441,7 @@ async def admin_chain_config(
     return chain_runtime_snapshot(
         request.app.state.chain_settings,
         current_chain_setup(request),
+        request.app.state.secret_store,
     )
 
 

@@ -131,11 +131,11 @@ class SafetyMonitor:
 
     def _backup_destination(self) -> Path:
         stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-        return Path(self.settings.database_path).parent.parent / "backups" / f"gfort-safety-{stamp}.sqlite3"
+        return Path(self.settings.database_path).parent.parent / "backups" / f"novera-safety-{stamp}.sqlite3"
 
     def _prune_backups(self, root: Path) -> None:
         keep = max(1, int(self.settings.safety_backup_retention_count))
-        items = sorted(root.glob("gfort-safety-*.sqlite3"), key=lambda p: p.stat().st_mtime, reverse=True)
+        items = sorted(root.glob("novera-safety-*.sqlite3"), key=lambda p: p.stat().st_mtime, reverse=True)
         for path in items[keep:]:
             try:
                 checksum = path.with_suffix(path.suffix + ".sha256")
@@ -189,7 +189,7 @@ class SafetyMonitor:
                 raise
             except Exception as exc:
                 self.runtime.last_backup_error = type(exc).__name__
-                logger.exception("GFORT safety backup failed")
+                logger.exception("NOVERA safety backup failed")
                 return
             self.runtime.last_backup_at = time.time()
             self.runtime.last_backup_path = path.name
@@ -237,7 +237,7 @@ class SafetyMonitor:
                 logger.warning("Safety alert delivery failed: admin=%s error=%s", admin_id, type(exc).__name__)
 
     def _alert_text(self, code: str, recovered: bool = False) -> str:
-        prefix = "✅ <b>GFORT Safety: восстановлено</b>" if recovered else "🚨 <b>GFORT Safety</b>"
+        prefix = "✅ <b>NOVERA Safety: восстановлено</b>" if recovered else "🚨 <b>NOVERA Safety</b>"
         details = {
             "LOW_BNB": "Недостаточный резерв BNB для безопасного выполнения новых выплат.",
             "LOW_USDT": "USDT на treasury меньше суммы текущих необработанных обязательств.",
@@ -388,7 +388,7 @@ class SafetyMonitor:
                     self.runtime.last_check_error = type(exc).__name__
                     self.runtime.status = "error"
                     self.circuit.add_reason("SAFETY_MONITOR_ERROR")
-                    logger.exception("GFORT safety monitor failed")
+                    logger.exception("NOVERA safety monitor failed")
                 try:
                     await asyncio.wait_for(
                         stop_event.wait(),

@@ -195,3 +195,76 @@ async def test_admin_investment_is_idempotent_and_due_after_24_hours(tmp_path) -
         assert any(row["event_type"] == "admin_investment_opened" for row in notifications["items"])
     finally:
         await repository.close()
+
+
+async def test_admin_close_investment_cancels_queued_payouts(tmp_path) -> None:
+    repository = DeltaRepository(tmp_path / "delta.sqlite3", MiniAppSettings(_env_file=None))
+    await repository.connect()
+    try:
+        await repository.ensure_user(50, "admin", "Admin", "ru")
+        await repository.ensure_user(51, "investor", "Investor", "ru")
+        await repository.set_wallet(51, WALLET_TWO)
+        opened = await repository.admin_open_investment(
+            51, usdt_to_minor("100"), 50, "Open for close test", "close_op_open_000001"
+        )
+        # Force the deposit due so a queued daily payout exists.
+        connection = repository._connection()
+        await connection.execute(
+            "UPDATE deposits SET next_payout_at = 0 WHERE id = ?",
+            (opened["id"],),
+        )
+        await connection.commit()
+        assert await repository.schedule_due_payouts() == 1
+
+        closed = await repository.admin_close_investment(
+            51, int(opened["id"]), 50, "Owner test reset", "close_op_close_000001"
+        )
+        repeated = await repository.admin_close_investment(
+            51, int(opened["id"]), 50, "Owner test reset", "close_op_close_000001"
+        )
+        assert closed["status"] == "completed"
+        assert closed["cancelled_payouts"] >= 1
+        assert repeated["reused"] is True
+        assert await repository.schedule_due_payouts() == 0
+
+        detail = await repository.admin_user_detail(51)
+        assert detail is not None
+        assert int(detail["stats"]["active_minor"] or 0) == 0
+        notifications = await repository.list_notifications(51)
+        assert any(row["event_type"] == "admin_investment_closed" for row in notifications["items"])
+    finally:
+        await repository.close()
+
+
+async def test_connect_rebrands_durable_notifications(tmp_path) -> None:
+    database_path = tmp_path / "delta.sqlite3"
+    business = MiniAppSettings(_env_file=None)
+    repository = DeltaRepository(database_path, business)
+    await repository.connect()
+    retired = "G" + "FORT"
+    try:
+        await repository.ensure_user(61, "member", "Member", "ru")
+        async with repository.transaction() as connection:
+            await repository._queue_notification(
+                connection,
+                user_id=61,
+                category="system",
+                event_type="legacy_brand_fixture",
+                title=retired,
+                body=f"Открыть {retired}",
+                telegram_html=f"<b>{retired}</b>",
+                dedupe_key="legacy-brand-fixture",
+            )
+    finally:
+        await repository.close()
+
+    repository = DeltaRepository(database_path, business)
+    await repository.connect()
+    try:
+        notifications = await repository.list_notifications(61)
+        item = notifications["items"][0]
+        assert item["title"] == "NOVERA"
+        assert item["body"] == "Открыть NOVERA"
+        assert retired not in item["telegram_html"]
+    finally:
+        await repository.close()

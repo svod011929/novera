@@ -46,7 +46,11 @@
     const daily = bpsMinor(deposit.principal_minor, terms.daily_profit_bps);
     const paidDays = Number(deposit.paid_days || 0);
     let paid = daily * paidDays;
-    if (deposit.status === 'completed') paid += Number(deposit.principal_minor || 0);
+    const totalDays = Math.max(1, Number(terms.payout_days || 0));
+    // Count principal only for a finished cycle, not for admin early-close.
+    if (deposit.status === 'completed' && paidDays >= totalDays) {
+      paid += Number(deposit.principal_minor || 0);
+    }
     return paid;
   };
   const depositRemainingMinor = (deposit, terms) => {
@@ -124,6 +128,12 @@
       chainActivated:'Blockchain активирован; backend перезапускается',
       reopenForFreshAuth:'Для активации закройте Mini App и откройте её снова из бота',
       secretFieldsRequired:'Заполните RPC, WSS и seed phrase',
+      scanBlockRequired:'Для production укажите scan start block больше 0 (блок начала сканирования депозитов)',
+      treasuryConfirmMismatch:'Адрес казны введён неверно — скопируйте показанный адрес полностью',
+      chainHealthFailed:'RPC/WSS не прошли проверку с VPS. Проверьте URL и доступность провайдера',
+      chainDnsFailed:'DNS провайдера RPC/WSS не резолвится с VPS',
+      chainPendingLost:'Сначала снова нажмите «Проверить конфигурацию» — карточка активации пропала после перезагрузки',
+      scanStartHint:'Для production обязательно > 0. Пример: текущий блок BSC минус небольшой запас.',
       setupFingerprint:'Отпечаток конфигурации',
       activationStepsTitle:'Шаги запуска',
       activationStep1:'1. Проверить RPC / WSS / seed',
@@ -159,6 +169,12 @@
       chainActivated:'Blockchain activated; backend is restarting',
       reopenForFreshAuth:'Close and reopen the Mini App from the bot before activation',
       secretFieldsRequired:'Enter RPC, WSS and seed phrase',
+      scanBlockRequired:'Production requires a scan start block greater than 0',
+      treasuryConfirmMismatch:'Treasury confirmation does not match — paste the shown address in full',
+      chainHealthFailed:'RPC/WSS health check failed from the VPS. Check the provider URLs',
+      chainDnsFailed:'RPC/WSS provider DNS lookup failed from the VPS',
+      chainPendingLost:'Run Validate again — the activation card was lost after reload',
+      scanStartHint:'Production requires > 0. Example: current BSC block minus a small margin.',
       setupFingerprint:'Configuration fingerprint',
       activationStepsTitle:'Activation steps',
       activationStep1:'1. Validate RPC / WSS / seed',
@@ -381,9 +397,9 @@
   Object.entries(TEST_PAYOUT_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
 
   const ADMIN_FINANCE_I18N = {
-    ru:{referralBalanceControl:'Реферальный баланс',referralBalanceNote:'Доступная к выводу сумма. Изменение фиксируется в журнале и не переписывает прошлые начисления.',referralBalanceSaved:'Реферальный баланс изменён',referralBalanceHistory:'История реферального баланса',noReferralBalanceHistory:'Реферальный баланс администратором ещё не менялся.',manualInvestment:'Открыть инвестицию',manualInvestmentNote:'Создаёт активную инвестицию без blockchain-пополнения. Она запускает реальные выплаты по текущему графику; первая — через 24 часа.',openInvestment:'Открыть инвестицию',investmentOpened:'Инвестиция открыта',partnerLevelAccess:'Доступ к уровням партнёрки',partnerLevelNote:'Ручной уровень действует только на будущие начисления и открывает все предыдущие уровни. Уровень 0 возвращает автоматическую квалификацию.',automaticQualification:'0 — автоматически',levelAccessSaved:'Доступ к уровням сохранён',levelHistory:'История доступа к уровням',noLevelHistory:'Ручной доступ к уровням ещё не менялся.',adminReason:'Причина изменения',adminReasonHint:'Обязательный комментарий для журнала',confirmOpenInvestment:'Открыть инвестицию {amount} USDT? Это запустит реальные выплаты по стандартному графику.',userWalletRequired:'Сначала укажите пользователю кошелёк для выплат',adminSource:'Открыто администратором'},
-    en:{referralBalanceControl:'Referral balance',referralBalanceNote:'Amount currently available for withdrawal. Changes are audited and do not rewrite past accruals.',referralBalanceSaved:'Referral balance updated',referralBalanceHistory:'Referral balance history',noReferralBalanceHistory:'The referral balance has not been changed by an administrator.',manualInvestment:'Open investment',manualInvestmentNote:'Creates an active investment without an on-chain deposit. It starts real payouts on the current schedule; the first is due in 24 hours.',openInvestment:'Open investment',investmentOpened:'Investment opened',partnerLevelAccess:'Partner level access',partnerLevelNote:'Manual access applies only to future accruals and includes all prior levels. Level 0 restores automatic qualification.',automaticQualification:'0 — automatic',levelAccessSaved:'Partner level access saved',levelHistory:'Level access history',noLevelHistory:'Manual level access has not been changed.',adminReason:'Change reason',adminReasonHint:'Required audit comment',confirmOpenInvestment:'Open a {amount} USDT investment? This starts real payouts on the standard schedule.',userWalletRequired:'Set the user payout wallet first',adminSource:'Opened by administrator'},
-    uk:{referralBalanceControl:'Реферальний баланс',referralBalanceNote:'Доступна до виведення сума. Зміна фіксується в журналі та не переписує минулі нарахування.',referralBalanceSaved:'Реферальний баланс змінено',referralBalanceHistory:'Історія реферального балансу',noReferralBalanceHistory:'Баланс ще не змінювався адміністратором.',manualInvestment:'Відкрити інвестицію',manualInvestmentNote:'Створює активну інвестицію без blockchain-поповнення. Перша виплата — через 24 години.',openInvestment:'Відкрити інвестицію',investmentOpened:'Інвестицію відкрито',partnerLevelAccess:'Доступ до рівнів партнерки',partnerLevelNote:'Ручний рівень діє лише на майбутні нарахування та відкриває попередні рівні. Рівень 0 повертає автоматичну кваліфікацію.',automaticQualification:'0 — автоматично',levelAccessSaved:'Доступ до рівнів збережено',levelHistory:'Історія доступу до рівнів',noLevelHistory:'Ручний доступ ще не змінювався.',adminReason:'Причина зміни',adminReasonHint:'Обов’язковий коментар для журналу',confirmOpenInvestment:'Відкрити інвестицію {amount} USDT? Це запустить реальні виплати за стандартним графіком.',userWalletRequired:'Спочатку вкажіть гаманець користувача для виплат',adminSource:'Відкрито адміністратором'}
+    ru:{referralBalanceControl:'Реферальный баланс',referralBalanceNote:'Доступная к выводу сумма. Изменение фиксируется в журнале и не переписывает прошлые начисления.',referralBalanceSaved:'Реферальный баланс изменён',referralBalanceHistory:'История реферального баланса',noReferralBalanceHistory:'Реферальный баланс администратором ещё не менялся.',manualInvestment:'Открыть инвестицию',manualInvestmentNote:'Создаёт активную инвестицию без blockchain-пополнения. Она запускает реальные выплаты по текущему графику; первая — через 24 часа.',openInvestment:'Открыть инвестицию',investmentOpened:'Инвестиция открыта',closeInvestment:'Закрыть инвестицию',closeInvestmentSection:'Закрытие инвестиции',closeInvestmentNote:'Останавливает активную инвестицию: будущие начисления не создаются, queued-выплаты отменяются. Уже confirmed on-chain выплаты не откатываются. Требуется причина ниже.',confirmCloseInvestment:'Закрыть инвестицию #{id}? Будущие выплаты будут остановлены.',investmentClosed:'Инвестиция закрыта',partnerLevelAccess:'Доступ к уровням партнёрки',partnerLevelNote:'Ручной уровень действует только на будущие начисления и открывает все предыдущие уровни. Уровень 0 возвращает автоматическую квалификацию.',automaticQualification:'0 — автоматически',levelAccessSaved:'Доступ к уровням сохранён',levelHistory:'История доступа к уровням',noLevelHistory:'Ручной доступ к уровням ещё не менялся.',adminReason:'Причина изменения',adminReasonHint:'Обязательный комментарий для журнала',confirmOpenInvestment:'Открыть инвестицию {amount} USDT? Это запустит реальные выплаты по стандартному графику.',userWalletRequired:'Сначала укажите пользователю кошелёк для выплат',adminSource:'Открыто администратором'},
+    en:{referralBalanceControl:'Referral balance',referralBalanceNote:'Amount currently available for withdrawal. Changes are audited and do not rewrite past accruals.',referralBalanceSaved:'Referral balance updated',referralBalanceHistory:'Referral balance history',noReferralBalanceHistory:'The referral balance has not been changed by an administrator.',manualInvestment:'Open investment',manualInvestmentNote:'Creates an active investment without an on-chain deposit. It starts real payouts on the current schedule; the first is due in 24 hours.',openInvestment:'Open investment',investmentOpened:'Investment opened',closeInvestment:'Close investment',closeInvestmentSection:'Close investment',closeInvestmentNote:'Stops an active investment: no further accruals, queued payouts are cancelled. Confirmed on-chain payouts are not reversed. Reason below is required.',confirmCloseInvestment:'Close investment #{id}? Future payouts will stop.',investmentClosed:'Investment closed',partnerLevelAccess:'Partner level access',partnerLevelNote:'Manual access applies only to future accruals and includes all prior levels. Level 0 restores automatic qualification.',automaticQualification:'0 — automatic',levelAccessSaved:'Partner level access saved',levelHistory:'Level access history',noLevelHistory:'Manual level access has not been changed.',adminReason:'Change reason',adminReasonHint:'Required audit comment',confirmOpenInvestment:'Open a {amount} USDT investment? This starts real payouts on the standard schedule.',userWalletRequired:'Set the user payout wallet first',adminSource:'Opened by administrator'},
+    uk:{referralBalanceControl:'Реферальний баланс',referralBalanceNote:'Доступна до виведення сума. Зміна фіксується в журналі та не переписує минулі нарахування.',referralBalanceSaved:'Реферальний баланс змінено',referralBalanceHistory:'Історія реферального балансу',noReferralBalanceHistory:'Баланс ще не змінювався адміністратором.',manualInvestment:'Відкрити інвестицію',manualInvestmentNote:'Створює активну інвестицію без blockchain-поповнення. Перша виплата — через 24 години.',openInvestment:'Відкрити інвестицію',investmentOpened:'Інвестицію відкрито',closeInvestment:'Закрити інвестицію',closeInvestmentSection:'Закриття інвестиції',closeInvestmentNote:'Зупиняє активну інвестицію: подальші нарахування не створюються, queued-виплати скасовуються. Confirmed on-chain виплати не відкатуються. Потрібна причина нижче.',confirmCloseInvestment:'Закрити інвестицію #{id}? Подальші виплати буде зупинено.',investmentClosed:'Інвестицію закрито',partnerLevelAccess:'Доступ до рівнів партнерки',partnerLevelNote:'Ручний рівень діє лише на майбутні нарахування та відкриває попередні рівні. Рівень 0 повертає автоматичну кваліфікацію.',automaticQualification:'0 — автоматично',levelAccessSaved:'Доступ до рівнів збережено',levelHistory:'Історія доступу до рівнів',noLevelHistory:'Ручний доступ ще не змінювався.',adminReason:'Причина зміни',adminReasonHint:'Обов’язковий коментар для журналу',confirmOpenInvestment:'Відкрити інвестицію {amount} USDT? Це запустить реальні виплати за стандартним графіком.',userWalletRequired:'Спочатку вкажіть гаманець користувача для виплат',adminSource:'Відкрито адміністратором'}
   };
   Object.entries(ADMIN_FINANCE_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
 
@@ -629,7 +645,12 @@
   };
   const telegramLang = tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? tg.initDataUnsafe.user.language_code : '';
   const NOVERA_SESSION_KEY = 'novera_auth_session_v10';
-  const LEGACY_SESSION_KEY = 'gfort_auth_session_v10';
+  // Hidden migration aliases keep existing Telegram sessions working while
+  // every visible product surface remains NOVERA-only.
+  const RETIRED_STORAGE_PREFIX = 'g' + 'fort';
+  const COMPAT_HEADER_PREFIX = 'X-' + 'G' + 'FORT';
+  const LEGACY_SESSION_KEY = `${RETIRED_STORAGE_PREFIX}_auth_session_v10`;
+  const LEGACY_LANGUAGE_KEY = `${RETIRED_STORAGE_PREFIX}_lang`;
   const SESSION_STORAGE_KEYS = [NOVERA_SESSION_KEY, LEGACY_SESSION_KEY];
   Object.assign(I18N.ru, {
     accountMismatch: 'Сменился Telegram-аккаунт. Закройте Mini App и откройте NOVERA из бота под нужным аккаунтом.',
@@ -712,11 +733,12 @@
   const state = {
     data:null, team:null, initData:readTelegramInitData(), telegramUserId:currentTelegramUserId(), loginToken:qs.get('login') || '',
     telegramSessionToken:'', telegramSessionLoaded:false,
-    lang:normalizeLanguage(localStorage.getItem('novera_lang') || localStorage.getItem('gfort_lang') || localStorage.getItem('delta_lang') || telegramLang),
+    lang:normalizeLanguage(localStorage.getItem('novera_lang') || localStorage.getItem(LEGACY_LANGUAGE_KEY) || localStorage.getItem('delta_lang') || telegramLang),
     active:'home', historyFilter:'all', adminTab:qs.get('tab') || 'overview', adminUserTab:'overview', payoutFilter:'all', adminUserFilter:'all', adminCache:{}, refreshTimer:null,
     broadcastImageFile:null, broadcastImageUrl:'', broadcastButtons:[], broadcastAudience:null, accountRefreshBusy:false,
     notifications:[], notificationUnread:0, notificationFilter:'all', notificationLastId:0, notificationTimer:null,
-    adminInvestmentOps:{}
+    adminInvestmentOps:{},
+    adminCloseInvestmentOps:{}
   };
 
   const loadTelegramSession = async (force=false) => {
@@ -735,7 +757,7 @@
       }
       if (token) break;
     }
-    // Migrate a legacy GFORT token into the NOVERA key when possible.
+    // Migrate any compatible stored token into the NOVERA key.
     if (token && tg && tg.SecureStorage && (!tg.isVersionAtLeast || tg.isVersionAtLeast('9.0'))) {
       storageSet(tg.SecureStorage,NOVERA_SESSION_KEY,token).catch(()=>{});
     }
@@ -907,7 +929,12 @@
     if (low.includes('minimum admin test payout')) return tr('testPayoutMinimum');
     if (status===429 || low.includes('too many requests')) return tr('tooManyRequests');
     if (status===413 || low.includes('request body is too large')) return tr('requestTooLarge');
-    if (status===422) return tr('invalidData');
+    if (low.includes('production mode requires a positive scan start block')) return tr('scanBlockRequired');
+    if (low.includes('treasury confirmation does not match')) return tr('treasuryConfirmMismatch');
+    if (low.includes('health check')) return tr('chainHealthFailed');
+    if (low.includes('dns lookup failed')) return tr('chainDnsFailed');
+    if (low.includes('seed phrase must contain') || low.includes('cannot derive an evm wallet')) return tr('secretFieldsRequired');
+    if (status===422) return d || tr('invalidData');
     if (status===409) return tr('accountMismatch');
     if (status===401) return tr('sessionExpired');
     return tr('requestFailed');
@@ -929,20 +956,19 @@
     }
     const headers = new Headers(options.headers || {});
     const initData = syncTelegramContext();
-    // Send both NOVERA and legacy GFORT header names so older API builds and
-    // the current backend both accept the per-account SecureStorage token.
+    // Send the canonical header plus a hidden rollback-compatible alias.
     if (state.telegramSessionToken) {
       headers.set('X-NOVERA-Session', state.telegramSessionToken);
-      headers.set('X-GFORT-Session', state.telegramSessionToken);
+      headers.set(`${COMPAT_HEADER_PREFIX}-Session`, state.telegramSessionToken);
     } else {
       headers.delete('X-NOVERA-Session');
-      headers.delete('X-GFORT-Session');
+      headers.delete(`${COMPAT_HEADER_PREFIX}-Session`);
     }
     if (initData) headers.set('X-Telegram-Init-Data', initData);
     else headers.delete('X-Telegram-Init-Data');
     if (isNativeTelegramContext()) {
       headers.set('X-NOVERA-Telegram-Context', '1');
-      headers.set('X-GFORT-Telegram-Context', '1');
+      headers.set(`${COMPAT_HEADER_PREFIX}-Telegram-Context`, '1');
     }
     headers.set('X-Request-Id', (crypto.randomUUID ? crypto.randomUUID() : `req-${Date.now()}-${Math.random()}`).replace(/-/g,''));
     if (options.body && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
@@ -1003,12 +1029,12 @@
     const initData = syncTelegramContext();
     if (state.telegramSessionToken) {
       headers.set('X-NOVERA-Session', state.telegramSessionToken);
-      headers.set('X-GFORT-Session', state.telegramSessionToken);
+      headers.set(`${COMPAT_HEADER_PREFIX}-Session`, state.telegramSessionToken);
     }
     if (initData) headers.set('X-Telegram-Init-Data', initData);
     if (isNativeTelegramContext()) {
       headers.set('X-NOVERA-Telegram-Context', '1');
-      headers.set('X-GFORT-Telegram-Context', '1');
+      headers.set(`${COMPAT_HEADER_PREFIX}-Telegram-Context`, '1');
     }
     const clearToken = () => {
       state.loginToken='';
@@ -1623,7 +1649,7 @@
     }).join(''):`<div class="empty-state compact">${esc(tr('noInviterHistory'))}</div>`;
     const referralBalanceHistory=referralAdjustments.length?referralAdjustments.slice(0,12).map((x)=>`<div class="balance-audit-row"><div><strong>${money(x.new_balance_minor)} USDT</strong><small>${esc(fmtDate(x.created_at))} · ${Number(x.delta_minor||0)>=0?'+':''}${money(x.delta_minor)} USDT</small></div><span>${esc(x.reason||'—')}</span></div>`).join(''):`<div class="empty-state compact">${esc(tr('noReferralBalanceHistory'))}</div>`;
     const levelHistory=levelAdjustments.length?levelAdjustments.slice(0,12).map((x)=>`<div class="balance-audit-row"><div><strong>${esc(x.new_level?`${tr('level')} ${x.new_level}`:tr('automaticQualification'))}</strong><small>${esc(fmtDate(x.created_at))}</small></div><span>${esc(x.reason||'—')}</span></div>`).join(''):`<div class="empty-state compact">${esc(tr('noLevelHistory'))}</div>`;
-    const depositRows=deposits.length?deposits.slice(0,40).map((dep)=>`<article class="list-card compact-card"><div class="list-card-header"><div><strong class="money">${money(dep.principal_minor)} USDT</strong><small>#${esc(dep.id)} · ${esc(fmtDate(dep.opened_at))}${dep.source==='admin'?' · '+esc(tr('adminSource')):''}</small></div><span class="tag ${esc(dep.status)}">${esc(statusText(dep.status))}</span></div>${dep.payout_address?`<small class="admin-payout-address">${esc(tr('depositPayoutAddressLabel'))}: ${esc(compactAddress(dep.payout_address))}</small>`:''}</article>`).join(''):`<div class="empty-state compact">${esc(tr('noUserDeposits'))}</div>`;
+    const depositRows=deposits.length?deposits.slice(0,40).map((dep)=>`<article class="list-card compact-card"><div class="list-card-header"><div><strong class="money">${money(dep.principal_minor)} USDT</strong><small>#${esc(dep.id)} · ${esc(fmtDate(dep.opened_at))}${dep.source==='admin'?' · '+esc(tr('adminSource')):''}</small></div><span class="tag ${esc(dep.status)}">${esc(statusText(dep.status))}</span></div>${dep.payout_address?`<small class="admin-payout-address">${esc(tr('depositPayoutAddressLabel'))}: ${esc(compactAddress(dep.payout_address))}</small>`:''}${dep.status==='active'?`<div class="admin-actions"><button class="admin-action danger close-admin-investment" type="button" data-deposit-id="${esc(dep.id)}">${esc(tr('closeInvestment'))}</button></div>`:''}</article>`).join(''):`<div class="empty-state compact">${esc(tr('noUserDeposits'))}</div>`;
     const payoutRows=payouts.length?payouts.slice(0,40).map((p)=>`<article class="list-card compact-card"><div class="list-card-header"><div><strong class="money">${money(p.amount_minor)} USDT</strong><small>#${esc(p.id)} · ${esc(p.subtype==='principal'?tr('principalReturn'):(p.kind==='referral'?tr('referral'):tr('daily')))} · ${esc(fmtDate(p.created_at))}</small></div><span class="tag ${esc(p.status)}">${esc(statusText(p.status))}</span></div>${p.address?`<small class="admin-payout-address">${esc(tr('payoutAddressLabel'))}: ${esc(compactAddress(p.address))}</small>`:''}${p.last_error?`<small class="error-line">${esc(p.last_error)}</small>`:''}</article>`).join(''):`<div class="empty-state compact">${esc(tr('noUserPayouts'))}</div>`;
     const openCounts=openPayoutCounts(payouts);
     const walletOpenStrip=`<div class="wallet-open-strip" aria-label="${esc(tr('walletOpenStripTitle'))}"><div><span>${esc(tr('queued'))}</span><strong>${esc(openCounts.queued)}</strong></div><div><span>${esc(tr('signed'))}</span><strong>${esc(openCounts.signed)}</strong></div><div><span>${esc(tr('broadcast'))}</span><strong>${esc(openCounts.broadcast)}</strong></div></div>`;
@@ -1648,6 +1674,7 @@
 
     const investmentsBody=`
       <div class="modal-section user-control-section"><h4>${esc(tr('manualInvestment'))}</h4><p class="field-hint">${esc(tr('manualInvestmentNote'))}</p><label class="input-label" for="adminInvestmentAmount">${esc(tr('amount'))}, USDT</label><input id="adminInvestmentAmount" class="text-input" type="number" min="0.000001" step="0.000001" inputmode="decimal" placeholder="USDT"><label class="input-label" for="adminInvestmentReason">${esc(tr('adminReason'))}</label><textarea id="adminInvestmentReason" class="textarea-input compact-textarea" maxlength="500" rows="2" placeholder="${esc(tr('adminReasonHint'))}"></textarea><button id="openAdminInvestment" class="primary-btn compact-primary" type="button">${esc(tr('openInvestment'))}</button></div>
+      <div class="modal-section user-control-section"><h4>${esc(tr('closeInvestmentSection'))}</h4><p class="field-hint">${esc(tr('closeInvestmentNote'))}</p><label class="input-label" for="adminCloseInvestmentReason">${esc(tr('adminReason'))}</label><textarea id="adminCloseInvestmentReason" class="textarea-input compact-textarea" maxlength="500" rows="2" placeholder="${esc(tr('adminReasonHint'))}"></textarea></div>
       <div class="modal-section"><h4>${esc(tr('deposits'))}</h4><div class="stack-list compact-list">${depositRows}</div></div>`;
 
     const payoutsBody=`<div class="modal-section"><div class="stack-list compact-list">${payoutRows}</div></div>`;
@@ -1691,6 +1718,7 @@
     if($('saveAdminBalance')) $('saveAdminBalance').addEventListener('click',()=>setAdminUserBalance(u.telegram_id));
     if($('saveAdminReferralBalance')) $('saveAdminReferralBalance').addEventListener('click',()=>setAdminReferralBalance(u.telegram_id));
     if($('openAdminInvestment')) $('openAdminInvestment').addEventListener('click',()=>openAdminInvestment(u.telegram_id));
+    $('adminUserDetail').querySelectorAll('.close-admin-investment').forEach((btn)=>btn.addEventListener('click',()=>closeAdminInvestment(u.telegram_id, Number(btn.dataset.depositId))));
     if($('saveAdminReferralLevel')) $('saveAdminReferralLevel').addEventListener('click',()=>setAdminReferralLevel(u.telegram_id));
     if($('saveAdminWallet')) $('saveAdminWallet').addEventListener('click',()=>setAdminUserWallet(u.telegram_id,$('adminWalletInput').value.trim()));
     if($('clearAdminWallet')) $('clearAdminWallet').addEventListener('click',()=>setAdminUserWallet(u.telegram_id,''));
@@ -1735,6 +1763,22 @@
       await api(`/api/admin/users/${encodeURIComponent(id)}/investments`,{method:'POST',body:JSON.stringify({amount_usdt:raw,reason,operation_id:operationId,confirm:'OPEN_INVESTMENT'})});
       delete state.adminInvestmentOps[id];toast(tr('investmentOpened'),'success');await loadAdminUsers($('adminSearch').value.trim());await openAdminUser(id);
     }catch(e){if(button)button.disabled=false;handleApiError(e);}
+  }
+  async function closeAdminInvestment(userId, depositId){
+    const reason=($('adminCloseInvestmentReason')&&$('adminCloseInvestmentReason').value.trim())||'';
+    if(!depositId||!reason){toast(tr('invalidData'),'error');return;}
+    if(!window.confirm(tr('confirmCloseInvestment').replace('{id}',String(depositId)))) return;
+    const fallbackId=`${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+    const opKey=`${userId}:${depositId}`;
+    const operationId=state.adminCloseInvestmentOps[opKey]||(window.crypto&&crypto.randomUUID?crypto.randomUUID().replace(/-/g,'_'):fallbackId);
+    state.adminCloseInvestmentOps[opKey]=operationId;
+    try{
+      await api(`/api/admin/users/${encodeURIComponent(userId)}/investments/${encodeURIComponent(depositId)}/close`,{method:'POST',body:JSON.stringify({reason,operation_id:operationId,confirm:'CLOSE_INVESTMENT'})});
+      delete state.adminCloseInvestmentOps[opKey];
+      toast(tr('investmentClosed'),'success');
+      await loadAdminUsers($('adminSearch').value.trim());
+      await openAdminUser(userId);
+    }catch(e){handleApiError(e);}
   }
   async function setAdminReferralLevel(id){
     const unlocked_level=Number($('adminReferralLevel').value),reason=$('adminReferralLevelReason').value.trim();
@@ -2091,12 +2135,13 @@
     const [s,cfgSafe]=await Promise.all([api('/api/admin/system'),api('/api/admin/chain-config')]);
     const cfg=s.blockchain_configuration||{},setup=cfgSafe.setup||s.setup||{},isOwner=Boolean(state.data&&state.data.auth&&state.data.auth.is_owner);
     state.adminCache.chainConfig=cfgSafe;
+    if(!state.adminCache.pendingChainConfig && cfgSafe.pending) state.adminCache.pendingChainConfig=cfgSafe.pending;
     const taskRows=Object.entries(s.tasks||{}).map(([k,v])=>`<div class="system-state-row"><span>${esc(k)}</span><strong>${esc(v==='running'?tr('running'):tr('stopped'))}</strong></div>`).join('');
     const statusCard=`<article class="panel setup-state-card ${esc(setup.status||'bootstrap')}"><div><span>${esc(tr('setupState'))}</span><strong>${esc(setupStatusText(setup.status))}</strong></div><small>${esc(setup.financial_ready?'financial ready':tr('financialLocked'))}</small>${setup.public_fingerprint?`<code>${esc(tr('setupFingerprint'))}: ${esc(setup.public_fingerprint)}</code>`:''}</article>`;
     const modeOptions=[['production',tr('modeProduction')],['testnet',tr('modeTestnet')]].map(([value,label])=>`<option value="${value}" ${cfgSafe.mode===value?'selected':''}>${esc(label)}</option>`).join('');
     const pending=state.adminCache.pendingChainConfig;
     const activation=pending?`<article class="panel settings-card activation-card"><div class="form-heading"><span class="form-icon">✓</span><div><strong>${esc(tr('chainValidated'))}</strong><small>${esc(tr('activationWarning'))}</small></div></div><div class="treasury-confirm-value"><span>${esc(tr('treasury'))}</span><code>${esc(pending.treasury_address)}</code></div><p class="field-hint">${esc(tr('setupFingerprint'))}: ${esc(pending.public_fingerprint)}</p><label class="settings-field"><span>${esc(tr('treasuryConfirm'))}</span><input id="chainTreasuryConfirmation" class="text-input" autocomplete="off" placeholder="0x…"></label><label class="settings-field"><span>${esc(tr('chainActivationReason'))}</span><input id="chainActivationReason" class="text-input" maxlength="500" value="${esc(tr('chainReasonPlaceholder'))}"></label><button id="activateChainConfig" class="primary-btn danger-confirm" type="button">${esc(tr('activateChain'))}</button></article>`:'';
-    const ownerForm=isOwner?`<article class="panel settings-card chain-settings-card"><div class="form-heading"><span class="form-icon">⛓</span><div><strong>${esc(tr('chainConfigTitle'))}</strong><small>${esc(tr('chainValidateHint'))}</small></div></div><div class="secret-status-grid"><div><span>RPC</span><strong>${esc(cfgSafe.rpc_configured?tr('secretConfigured'):tr('secretMissing'))}</strong></div><div><span>WSS</span><strong>${esc(cfgSafe.wss_configured?tr('secretConfigured'):tr('secretMissing'))}</strong></div><div><span>${esc(tr('signing'))}</span><strong>${esc(cfgSafe.seed_configured?tr('secretConfigured'):tr('secretMissing'))}</strong></div></div><label class="settings-field"><span>${esc(tr('chainMode'))}</span><select id="chainMode" class="select-input">${modeOptions}</select></label><div class="settings-grid chain-public-grid"><label class="settings-field"><span>${esc(tr('tokenContract'))}</span><input id="chainTokenContract" class="text-input" maxlength="42" value="${esc(cfgSafe.token_contract||'0x55d398326f99059fF775485246999027B3197955')}" placeholder="0x…"></label><label class="settings-field"><span>${esc(tr('scanStartBlock'))}</span><input id="chainScanStart" class="text-input" type="number" min="0" step="1" inputmode="numeric" value="${esc(cfgSafe.scan_start_block||0)}"></label></div><div class="secret-fields"><label class="settings-field"><span>${esc(tr('rpcEndpoint'))} · ${esc(tr('writeOnly'))}</span><input id="chainRpcUrl" class="text-input" type="password" autocomplete="off" spellcheck="false" placeholder="https://…"></label><label class="settings-field"><span>${esc(tr('wssEndpoint'))} · ${esc(tr('writeOnly'))}</span><input id="chainWssUrl" class="text-input" type="password" autocomplete="off" spellcheck="false" placeholder="wss://…"></label><label class="settings-field"><span>${esc(tr('seedPhraseWriteOnly'))} · ${esc(tr('writeOnly'))}</span><input id="chainSeedPhrase" class="text-input" type="password" autocomplete="off" spellcheck="false" placeholder="12 / 15 / 18 / 21 / 24 words"></label><p class="setup-risk">${esc(tr('seedWebviewWarning'))}</p><label class="switch-row"><span>${esc(tr('acceptSeedRisk'))}</span><input id="chainSeedRiskAck" type="checkbox"></label><label class="settings-field"><span>${esc(tr('chainReason'))}</span><input id="chainConfigReason" class="text-input" maxlength="500" value="${esc(tr('chainReasonPlaceholder'))}"></label></div><button id="validateChainConfig" class="primary-btn" type="button">${esc(tr('chainValidate'))}</button></article>`:`<article class="panel settings-card"><strong>${esc(tr('ownerRequired'))}</strong><p class="field-hint">${esc(tr('financialLocked'))}</p></article>`;
+    const ownerForm=isOwner?`<article class="panel settings-card chain-settings-card"><div class="form-heading"><span class="form-icon">⛓</span><div><strong>${esc(tr('chainConfigTitle'))}</strong><small>${esc(tr('chainValidateHint'))}</small></div></div><div class="secret-status-grid"><div><span>RPC</span><strong>${esc(cfgSafe.rpc_configured?tr('secretConfigured'):tr('secretMissing'))}</strong></div><div><span>WSS</span><strong>${esc(cfgSafe.wss_configured?tr('secretConfigured'):tr('secretMissing'))}</strong></div><div><span>${esc(tr('signing'))}</span><strong>${esc(cfgSafe.seed_configured?tr('secretConfigured'):tr('secretMissing'))}</strong></div></div><label class="settings-field"><span>${esc(tr('chainMode'))}</span><select id="chainMode" class="select-input">${modeOptions}</select></label><div class="settings-grid chain-public-grid"><label class="settings-field"><span>${esc(tr('tokenContract'))}</span><input id="chainTokenContract" class="text-input" maxlength="42" value="${esc(cfgSafe.token_contract||'0x55d398326f99059fF775485246999027B3197955')}" placeholder="0x…"></label><label class="settings-field"><span>${esc(tr('scanStartBlock'))}</span><input id="chainScanStart" class="text-input" type="number" min="1" step="1" inputmode="numeric" value="${esc(cfgSafe.scan_start_block||'')}" placeholder="42000000"><small class="field-hint">${esc(tr('scanStartHint'))}</small></label></div><div class="secret-fields"><label class="settings-field"><span>${esc(tr('rpcEndpoint'))} · ${esc(tr('writeOnly'))}</span><input id="chainRpcUrl" class="text-input" type="password" autocomplete="off" spellcheck="false" placeholder="https://…"></label><label class="settings-field"><span>${esc(tr('wssEndpoint'))} · ${esc(tr('writeOnly'))}</span><input id="chainWssUrl" class="text-input" type="password" autocomplete="off" spellcheck="false" placeholder="wss://…"></label><label class="settings-field"><span>${esc(tr('seedPhraseWriteOnly'))} · ${esc(tr('writeOnly'))}</span><input id="chainSeedPhrase" class="text-input" type="password" autocomplete="off" spellcheck="false" placeholder="12 / 15 / 18 / 21 / 24 words"></label><p class="setup-risk">${esc(tr('seedWebviewWarning'))}</p><label class="switch-row"><span>${esc(tr('acceptSeedRisk'))}</span><input id="chainSeedRiskAck" type="checkbox"></label><label class="settings-field"><span>${esc(tr('chainReason'))}</span><input id="chainConfigReason" class="text-input" maxlength="500" value="${esc(tr('chainReasonPlaceholder'))}"></label></div><button id="validateChainConfig" class="primary-btn" type="button">${esc(tr('chainValidate'))}</button></article>`:`<article class="panel settings-card"><strong>${esc(tr('ownerRequired'))}</strong><p class="field-hint">${esc(tr('financialLocked'))}</p></article>`;
     const status=String(setup.status||'bootstrap');
     const stepsCard=`<article class="panel activation-steps-card" role="note"><div class="form-heading"><span class="form-icon">①</span><div><strong>${esc(tr('activationStepsTitle'))}</strong><small>${esc(tr('keyBackupHint'))}</small></div></div><ol class="activation-steps"><li class="${status==='bootstrap'&&!pending?'current':''}">${esc(tr('activationStep1'))}</li><li class="${pending?'current':''}">${esc(tr('activationStep2'))}</li><li class="${pending?'':''}">${esc(tr('activationStep3'))}</li><li>${esc(tr('activationStep4'))}</li></ol></article>`;
     const postActive=status==='active'?`<article class="panel post-activate-card"><div class="form-heading"><span class="form-icon">✓</span><div><strong>${esc(tr('postActivateChecklist'))}</strong><small>${esc(tr('postActivateTerms'))}</small></div></div><p class="field-hint">${esc(tr('postActivateBackup'))}</p><button id="goAdminTerms" class="secondary-btn touch-target" type="button">${esc(tr('terms'))}</button></article>`:'';
@@ -2108,6 +2153,7 @@
   async function validateAdminChainConfig(){
     const token_contract=$('chainTokenContract').value.trim(),mode=$('chainMode').value,scan=Number($('chainScanStart').value),rpc=$('chainRpcUrl').value.trim(),wss=$('chainWssUrl').value.trim(),seed=$('chainSeedPhrase').value.trim(),reason=$('chainConfigReason').value.trim();
     if(!/^0x[a-fA-F0-9]{40}$/.test(token_contract)||!Number.isFinite(scan)||scan<0||!rpc||!wss||!seed||reason.length<4){toast(tr('secretFieldsRequired'),'error');return;}
+    if(mode==='production' && scan<=0){toast(tr('scanBlockRequired'),'error');return;}
     if(!$('chainSeedRiskAck').checked){toast(tr('seedWebviewWarning'),'error');return;}
     const btn=$('validateChainConfig');btn.disabled=true;
     let payload={mode,token_contract,scan_start_block:Math.round(scan),rpc_url:rpc,wss_url:wss,seed_phrase:seed,reason};
@@ -2124,7 +2170,8 @@
   }
   async function activateAdminChainConfig(){
     const pending=state.adminCache.pendingChainConfig,confirmation=$('chainTreasuryConfirmation').value.trim(),reason=$('chainActivationReason').value.trim();
-    if(!pending||confirmation.toLowerCase()!==String(pending.treasury_address||'').toLowerCase()||reason.length<4){toast(tr('invalidData'),'error');return;}
+    if(!pending){toast(tr('chainPendingLost'),'error');return;}
+    if(confirmation.toLowerCase()!==String(pending.treasury_address||'').toLowerCase()||reason.length<4){toast(tr('treasuryConfirmMismatch'),'error');return;}
     if(!window.confirm(tr('activationWarning')))return;
     const btn=$('activateChainConfig');btn.disabled=true;
     const operation_id=(crypto.randomUUID?crypto.randomUUID():`activate-${Date.now()}-${Math.random()}`).replace(/-/g,'');

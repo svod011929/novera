@@ -72,6 +72,32 @@ Get-ChildItem -LiteralPath $PayloadDir -Recurse -File -Force |
     } |
     Remove-Item -Force
 
+# Fresh installers must contain only the NOVERA brand. Deployment aliases and
+# filesystem paths from retired builds are rewritten consistently inside the
+# isolated payload; the currently running VPS layout is not touched.
+$RetiredBrand = "G" + "FORT"
+$PayloadTextExtensions = @(
+    ".py", ".js", ".css", ".html", ".svg", ".json", ".md", ".txt",
+    ".sh", ".ps1", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".example"
+)
+Get-ChildItem -LiteralPath $PayloadDir -Recurse -File -Force |
+    Where-Object {
+        $PayloadTextExtensions -contains $_.Extension.ToLowerInvariant() -or
+        $_.Name -in @("Dockerfile", "Caddyfile.vps")
+    } |
+    ForEach-Object {
+        $Text = [System.IO.File]::ReadAllText($_.FullName)
+        $Clean = $Text.Replace($RetiredBrand, "NOVERA")
+        $Clean = $Clean.Replace($RetiredBrand.ToLowerInvariant(), "novera")
+        $Clean = $Clean.Replace(
+            $RetiredBrand.Substring(0, 1) + $RetiredBrand.Substring(1).ToLowerInvariant(),
+            "Novera"
+        )
+        if ($Clean -ne $Text) {
+            [System.IO.File]::WriteAllText($_.FullName, $Clean, $Utf8NoBom)
+        }
+    }
+
 $Critical = @(
     "delta_backend/api.py",
     "delta_backend/config.py",
@@ -117,6 +143,15 @@ $TokenLeaks = Get-ChildItem -LiteralPath $PayloadDir -Recurse -File |
 if ($TokenLeaks) {
     throw "Token-shaped literal found outside test fixtures"
 }
+$BrandLeaks = Get-ChildItem -LiteralPath $PayloadDir -Recurse -File -Force |
+    Where-Object {
+        $PayloadTextExtensions -contains $_.Extension.ToLowerInvariant() -or
+        $_.Name -in @("Dockerfile", "Caddyfile.vps")
+    } |
+    Select-String -SimpleMatch -Pattern $RetiredBrand
+if ($BrandLeaks) {
+    throw "Retired brand found in bootstrap payload"
+}
 
 Write-Host "[BOOTSTRAP] Creating payload archive..."
 Push-Location $PayloadDir
@@ -134,6 +169,8 @@ if (($Stub -split "`r?`n" | Where-Object { $_ -eq $Marker }).Count -ne 1) {
 }
 $Stub = $Stub.Replace("__PAYLOAD_TAR_SHA256__", $TarHash)
 $Stub = $Stub.Replace("__RELEASE_VERSION__", $ReleaseVersion)
+$Stub = $Stub.Replace($RetiredBrand, "NOVERA")
+$Stub = $Stub.Replace($RetiredBrand.ToLowerInvariant(), "novera")
 $Stub = $Stub -replace "`r`n", "`n" -replace "`r", "`n"
 if (-not $Stub.EndsWith("`n")) { $Stub += "`n" }
 

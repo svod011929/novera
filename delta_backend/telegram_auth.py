@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from urllib.parse import parse_qsl
 
 
-# GFORT V10 Telegram per-user storage authentication
+# NOVERA Telegram per-user storage authentication
 
 
 class TelegramAuthError(ValueError):

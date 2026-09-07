@@ -14,11 +14,11 @@ from .amounts import MINOR_FACTOR, calculate_bps, minor_to_text
 from .api_settings import MiniAppSettings
 from .models import TransferEvent
 from .telegram_auth import TelegramUser
-# GFORT V10.1 admin inviter management
-# GFORT V10.2 real admin treasury test payouts
-# GFORT V10.3 durable Telegram + in-app user notifications
-# GFORT V10.4 production safety state + payout telemetry
-# GFORT V10.6 audited admin financial and partner controls
+# NOVERA admin inviter management
+# NOVERA real admin treasury test payouts
+# NOVERA durable Telegram + in-app user notifications
+# NOVERA production safety state + payout telemetry
+# NOVERA audited admin financial and partner controls
 
 
 SCHEMA = """
@@ -296,6 +296,19 @@ CREATE TABLE IF NOT EXISTS admin_investment_openings (
 CREATE INDEX IF NOT EXISTS idx_admin_investment_openings_user
 ON admin_investment_openings(user_id, created_at DESC, deposit_id DESC);
 
+CREATE TABLE IF NOT EXISTS admin_investment_closures (
+    deposit_id INTEGER PRIMARY KEY REFERENCES deposits(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(telegram_id) ON DELETE CASCADE,
+    operation_key TEXT NOT NULL UNIQUE,
+    reason TEXT NOT NULL,
+    closed_by INTEGER NOT NULL,
+    cancelled_payouts INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_investment_closures_user
+ON admin_investment_closures(user_id, created_at DESC, deposit_id DESC);
+
 CREATE TABLE IF NOT EXISTS admin_control_idempotency (
     operation_key TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
@@ -507,6 +520,27 @@ class DeltaRepository:
         await connection.execute(
             "UPDATE broadcast_deliveries SET status = 'queued' WHERE status = 'sending'"
         )
+        # Remove the retired brand from durable content already stored in the
+        # database so old in-app notifications and queued Telegram deliveries
+        # are rendered exclusively as NOVERA after this upgrade.
+        retired_brand = "G" + "FORT"
+        replacements = (
+            (retired_brand, "NOVERA"),
+            (retired_brand.capitalize(), "Novera"),
+            (retired_brand.lower(), "novera"),
+        )
+        for table, columns in (
+            ("user_notifications", ("title", "body", "telegram_html")),
+            ("broadcasts", ("message", "buttons_json")),
+            ("audit_events", ("details",)),
+        ):
+            for column in columns:
+                for old, new in replacements:
+                    await connection.execute(
+                        f"UPDATE {table} SET {column} = replace({column}, ?, ?) "
+                        f"WHERE instr({column}, ?) > 0",
+                        (old, new, old),
+                    )
 
     async def close(self) -> None:
         if self.connection is not None:
@@ -1052,7 +1086,7 @@ class DeltaRepository:
                     telegram_html=(
                         "👥 <b>Новый партнёр в команде</b>\n\n"
                         f"Пользователь: <b>{safe_label}</b>\n"
-                        "Он уже отображается в вашей структуре GFORT."
+                        "Он уже отображается в вашей структуре NOVERA."
                     ),
                     dedupe_key=f"referral-joined:{telegram_id}",
                     data={"target_view": "team", "member_id": int(telegram_id)},
@@ -1700,7 +1734,7 @@ class DeltaRepository:
                         "⚠️ <b>Выплата требует внимания</b>\n\n"
                         f"Сумма: <b>{amount_text} USDT</b>\n"
                         "Транзакция не была завершена из-за технической ошибки. "
-                        "Заявка сохранена в GFORT и не потеряна."
+                        "Заявка сохранена в NOVERA и не потеряна."
                     ),
                     dedupe_key=f"payout-failed:{payout_id}:{int(payout['attempts'] or 0)}",
                     data={"target_view": "history", "payout_id": int(payout_id)},
@@ -2967,6 +3001,147 @@ class DeltaRepository:
             cursor = await connection.execute("SELECT * FROM deposits WHERE id = ?", (deposit_id,))
             result = dict(await cursor.fetchone())
             result["reused"] = False
+            return result
+
+    async def admin_close_investment(
+        self,
+        user_id: int,
+        deposit_id: int,
+        changed_by: int,
+        reason: str,
+        operation_id: str,
+    ) -> dict[str, object]:
+        clean_reason = reason.strip()[:500]
+        if not clean_reason:
+            raise RepositoryError("Investment close reason is required")
+        clean_operation = operation_id.strip()
+        if not clean_operation or len(clean_operation) > 80:
+            raise RepositoryError("Invalid investment close operation ID")
+        operation_key = f"admin-investment-close:{changed_by}:{user_id}:{deposit_id}:{clean_operation}"
+        now = int(time.time())
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT deposits.*, closures.operation_key, closures.cancelled_payouts
+                FROM admin_investment_closures AS closures
+                JOIN deposits ON deposits.id = closures.deposit_id
+                WHERE closures.operation_key = ?
+                """,
+                (operation_key,),
+            )
+            existing = await cursor.fetchone()
+            if existing:
+                result = dict(existing)
+                result["reused"] = True
+                result["cancelled_payouts"] = int(existing["cancelled_payouts"] or 0)
+                return result
+
+            cursor = await connection.execute(
+                "SELECT * FROM deposits WHERE id = ? AND user_id = ?",
+                (int(deposit_id), int(user_id)),
+            )
+            deposit = await cursor.fetchone()
+            if deposit is None:
+                raise RepositoryError("Deposit not found")
+            if str(deposit["status"]) != "active":
+                raise RepositoryError("Only active investments can be closed")
+
+            cursor = await connection.execute(
+                """
+                SELECT COUNT(*) AS value FROM payouts
+                WHERE source_deposit_id = ?
+                  AND status IN ('signed', 'broadcast')
+                """,
+                (int(deposit_id),),
+            )
+            in_flight = int((await cursor.fetchone())["value"] or 0)
+            if in_flight:
+                raise RepositoryError(
+                    "Investment has in-flight payouts; wait until they confirm or fail"
+                )
+
+            cursor = await connection.execute(
+                """
+                UPDATE payouts
+                SET status = 'failed',
+                    last_error = ?,
+                    updated_at = ?,
+                    status_changed_at = ?
+                WHERE source_deposit_id = ?
+                  AND status = 'queued'
+                """,
+                (
+                    "Cancelled by administrator",
+                    now,
+                    now,
+                    int(deposit_id),
+                ),
+            )
+            cancelled = int(cursor.rowcount or 0)
+
+            await connection.execute(
+                """
+                UPDATE deposits
+                SET status = 'completed', completed_at = ?
+                WHERE id = ? AND status = 'active'
+                """,
+                (now, int(deposit_id)),
+            )
+            await connection.execute(
+                "INSERT INTO admin_investment_closures("
+                "deposit_id,user_id,operation_key,reason,closed_by,cancelled_payouts,created_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    int(deposit_id),
+                    int(user_id),
+                    operation_key,
+                    clean_reason,
+                    int(changed_by),
+                    cancelled,
+                    now,
+                ),
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) VALUES (?, ?, ?)",
+                (
+                    "admin_investment_closed",
+                    (
+                        f"admin={changed_by};user={user_id};deposit={deposit_id};"
+                        f"cancelled_payouts={cancelled};reason={clean_reason}"
+                    ),
+                    now,
+                ),
+            )
+            amount_text = minor_to_text(int(deposit["principal_minor"]))
+            await self._queue_notification(
+                connection,
+                user_id=int(user_id),
+                category="deposit",
+                event_type="admin_investment_closed",
+                title="Инвестиция закрыта",
+                body=f"Администратор закрыл инвестицию #{deposit_id} на {amount_text} USDT.",
+                telegram_html=(
+                    "⏹ <b>Инвестиция закрыта</b>\n\n"
+                    f"💰 Сумма: <b>{amount_text} USDT</b>\n"
+                    f"📦 Инвестиция: <b>#{deposit_id}</b>\n"
+                    "Дальнейшие начисления по этой инвестиции остановлены."
+                ),
+                dedupe_key=f"admin-investment-closed:{deposit_id}:{clean_operation}",
+                data={
+                    "target_view": "assets",
+                    "deposit_id": int(deposit_id),
+                    "amount_minor": int(deposit["principal_minor"]),
+                    "source": "admin",
+                },
+                created_at=now,
+            )
+            cursor = await connection.execute(
+                "SELECT * FROM deposits WHERE id = ?",
+                (int(deposit_id),),
+            )
+            result = dict(await cursor.fetchone())
+            result["reused"] = False
+            result["cancelled_payouts"] = cancelled
             return result
 
     async def set_user_balance(

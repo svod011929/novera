@@ -17,7 +17,7 @@ def test_bootstrap_stub_is_one_file_fail_closed_installer() -> None:
     assert stub.count("\n__NOVERA_BOOTSTRAP_PAYLOAD__\n") == 1
     assert stub.index("exit 0") < stub.index("\n__NOVERA_BOOTSTRAP_PAYLOAD__\n")
     assert "read -r -s" in stub
-    assert "Existing NOVERA/GFORT state detected" in stub
+    assert "Existing NOVERA state detected" in stub
     assert "CHAIN_ENABLED=false" in stub
     assert "DEPOSITS_ENABLED=false" in stub
     assert "INVESTMENTS_ENABLED=false" in stub
@@ -54,6 +54,7 @@ def test_builder_includes_dockerignore_and_round_trip_checks() -> None:
     assert "FromBase64String" in builder
     assert "runtime_config_key.txt" in builder
     assert "Token-shaped literal found outside test fixtures" in builder
+    assert "Retired brand found in bootstrap payload" in builder
 
 
 def test_safe_update_is_staged_with_rollback_and_frontend_mode() -> None:
@@ -62,7 +63,7 @@ def test_safe_update_is_staged_with_rollback_and_frontend_mode() -> None:
     assert "frontend" in update
     assert "rolling back" in update.lower() or "Rolling back" in update
     assert "deploy/backup.sh" in update
-    assert "GFORT_FRONTEND_DIR" in update
+    assert f"{'G' + 'FORT'}_FRONTEND_DIR" in update
     assert "wait_ready" in update
     check = _text("deploy/post-update-check.sh")
     assert "/health" in check

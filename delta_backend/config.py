@@ -140,7 +140,7 @@ class Settings(BaseSettings):
     minimum_native_balance_wei: int = 1_000_000_000_000_000
     minimum_token_balance_usdt: Decimal = Decimal("1")
 
-    # GFORT V10.4 production safety layer. These settings do not change the
+    # NOVERA production safety layer. These settings do not change the
     # accounting rules; they only govern monitoring, backups and payout signing.
     safety_monitor_enabled: bool = True
     safety_check_interval_seconds: int = 30

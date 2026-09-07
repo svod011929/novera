@@ -45,15 +45,24 @@ class DepositMonitor:
 
     async def _initial_height(self, safe_head: int) -> int:
         stored = await self.repository.get_sync_height(self.sync_key)
-        if stored is not None:
-            return stored
-        value = (
+        configured_floor = (
             self.settings.scan_start_block - 1
             if self.settings.scan_start_block > 0
             else safe_head
         )
-        await self.repository.set_sync_height(self.sync_key, value)
-        return value
+        if stored is None:
+            await self.repository.set_sync_height(self.sync_key, configured_floor)
+            return configured_floor
+        if self.settings.scan_start_block > 0 and stored < configured_floor:
+            logger.warning(
+                "Deposit sync cursor %s predates configured scan start; "
+                "advancing it to %s",
+                stored,
+                configured_floor,
+            )
+            await self.repository.set_sync_height(self.sync_key, configured_floor)
+            return configured_floor
+        return stored
 
     async def _scan_locked(self, *, drain: bool) -> None:
         """HTTPS recovery path. It is not used to confirm healthy WSS events."""

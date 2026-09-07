@@ -84,7 +84,7 @@ require_fresh_host(){
     [[ "$EXPECTED_IPV4" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || fail "Invalid IPv4 address"
     [[ "$OWNER_ID" =~ ^[0-9]{5,20}$ ]] || fail "Owner ID must be a numeric Telegram ID"
     if [[ -e "$COMPAT_LINK" || -e "$CURRENT_LINK" || -f "$STATE_DIR/data/delta.sqlite3" ]]; then
-        fail "Existing NOVERA/GFORT state detected. Fresh bootstrap refuses to overwrite it."
+        fail "Existing NOVERA state detected. Fresh bootstrap refuses to overwrite it."
     fi
     if [[ -d "$RELEASE_ROOT" ]] && find "$RELEASE_ROOT" -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
         fail "$RELEASE_ROOT is not empty. Recover or archive it before a fresh install."

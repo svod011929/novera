@@ -92,7 +92,7 @@ Cursor отмечает выполненные пункты и сохраняе�
 - [x] Full suite **90/90**, JS/shell parse, token scan and 74-file payload/hash
   round-trip
 - [x] Final artifact:
-  `_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh`
+  `_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh`
   (supersedes `…20260905-220159.sh`, which fails on Ubuntu 26.04 uutils)
 - [x] Production run — 2026-09-06, owner-authorised, over SSH on
   `170.168.91.129`: `https://bnbb.tech` in `bootstrap` state, TLS issued,

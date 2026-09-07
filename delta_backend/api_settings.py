@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# GFORT V9.1 Telegram session compatibility
+# NOVERA Telegram session compatibility
 
 
 class MiniAppSettings(BaseSettings):
@@ -65,7 +65,7 @@ class MiniAppSettings(BaseSettings):
         if not 60 <= self.telegram_init_data_ttl_seconds <= 86_400:
             raise ValueError("Telegram initData TTL must be between 60 and 86400 seconds")
         if not 3_600 <= self.telegram_session_ttl_seconds <= 7_776_000:
-            raise ValueError("GFORT session TTL must be between 3600 and 7776000 seconds")
+            raise ValueError("NOVERA session TTL must be between 3600 and 7776000 seconds")
         if self.max_request_bytes < 4096:
             raise ValueError("MAX_REQUEST_BYTES is too small")
         if self.mutation_rate_limit <= 0 or self.mutation_rate_window_seconds <= 0:

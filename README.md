@@ -59,7 +59,7 @@ curl -fsSL \
 Что делает обёртка:
 
 1. скачивает закреплённый one-file installer из этого репо  
-2. проверяет **SHA-256** `85b5b6b54147e7d683777bb529ae4d7d937ac8de71f005180b85ec6d20eab415`  
+2. проверяет **SHA-256** `759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45`
 3. запускает его (скрытый ввод **нового** токена BotFather)
 
 ### Пример для production (bnbb.tech)
@@ -80,14 +80,14 @@ curl -fsSL \
 ```bash
 # ноутбук
 gh api -H "Accept: application/vnd.github.raw" \
-  "/repos/svod011929/novera/contents/_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh" \
-  > NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh
+  "/repos/svod011929/novera/contents/_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh" \
+  > NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh
 
-echo '85b5b6b54147e7d683777bb529ae4d7d937ac8de71f005180b85ec6d20eab415  NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh' \
+echo '759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45  NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh' \
   | sha256sum -c -
 
-scp NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh root@YOUR_VPS:/root/
-ssh root@YOUR_VPS 'bash NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh \
+scp NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh root@YOUR_VPS:/root/
+ssh root@YOUR_VPS 'bash NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh \
   --domain YOUR_DOMAIN --ip YOUR_PUBLIC_IP --owner-id YOUR_TELEGRAM_ID'
 ```
 
@@ -152,8 +152,8 @@ _owner_inputs/     decision pack владельца (принят 2026-09-06)
 
 | Артефакт | Значение |
 |----------|----------|
-| Файл | `_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh` |
-| SHA-256 | `85b5b6b54147e7d683777bb529ae4d7d937ac8de71f005180b85ec6d20eab415` |
+| Файл | `_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh` |
+| SHA-256 | `759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45` |
 | Точка входа | [`install.sh`](./install.sh) |
 
 Устарел (не использовать на Ubuntu 26.04): `…20260905-220159.sh`.

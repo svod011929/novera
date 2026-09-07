@@ -1,5 +1,16 @@
 # CHANGELOG (Cursor working notes)
 
+## 2026-09-07 — NOVERA-only public branding
+
+- Removed the retired brand from bot notifications, inline buttons, API errors,
+  safety alerts and frontend runtime source.
+- Added startup migration for durable notifications, broadcasts and audit text.
+- Restored hidden session/storage compatibility aliases without exposing them
+  in user-facing copy.
+- Added decoded-payload brand gate and rebuilt pinned installer:
+  `NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh`
+  (`759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45`).
+
 ## 2026-09-06 — Decision pack + System wizard + admin idempotency
 
 - Added `_owner_inputs/DECISION_PACK_AS_IMPLEMENTED.md` (as-implemented answers + activation checklist)

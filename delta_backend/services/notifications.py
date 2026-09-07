@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class UserNotificationService:
-    """Deliver durable user notifications through the GFORT Telegram bot.
+    """Deliver durable user notifications through the NOVERA Telegram bot.
 
     The same notification stays available in the Mini App even when Telegram
     delivery is impossible (bot muted/blocked, temporary Telegram error, etc.).
@@ -39,7 +39,7 @@ class UserNotificationService:
         return InlineKeyboardMarkup(
             inline_keyboard=[[
                 InlineKeyboardButton(
-                    text="Открыть GFORT",
+                    text="Открыть NOVERA",
                     web_app=WebAppInfo(url=url),
                 )
             ]]
@@ -48,7 +48,7 @@ class UserNotificationService:
     async def _send(self, delivery: dict[str, object]) -> None:
         await self.bot.send_message(
             chat_id=int(delivery["user_id"]),
-            text=str(delivery.get("telegram_html") or delivery.get("body") or "GFORT"),
+            text=str(delivery.get("telegram_html") or delivery.get("body") or "NOVERA"),
             parse_mode="HTML",
             reply_markup=self._keyboard(delivery),
             disable_web_page_preview=True,

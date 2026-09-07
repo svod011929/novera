@@ -2,10 +2,11 @@
 
 ## Final artifact
 
-- File: `releases/NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh`
-- SHA-256: `85b5b6b54147e7d683777bb529ae4d7d937ac8de71f005180b85ec6d20eab415`
-- Sidecar: `releases/NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh.sha256`
-- Manifest: `releases/BOOTSTRAP_MANIFEST_20260906-091454.txt`
+- File: `releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh`
+- SHA-256: `759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45`
+- Sidecar: `releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh.sha256`
+- Manifest: `releases/BOOTSTRAP_MANIFEST_20260907-103836.txt`
+- Brand gate: decoded payload contains no retired public-brand literals.
 
 The artifact contains no runtime bot token, RPC/WSS value, seed, encryption key,
 `.env` or database.
@@ -19,8 +20,8 @@ Copy the installer to a clean Ubuntu/Debian VPS with an NTP-synchronised clock,
 then run:
 
 ```bash
-sha256sum NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh
-sudo bash NOVERA_BOOTSTRAP_INSTALLER_20260906-091454.sh \
+sha256sum NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh
+sudo bash NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh \
   --domain bnbb.tech \
   --ip 170.168.91.129 \
   --owner-id 8054710484

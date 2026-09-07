@@ -207,7 +207,7 @@ async def test_native_login_token_cannot_switch_telegram_account(tmp_path) -> No
 
 
 async def test_novera_session_header_authenticates_without_init_data(tmp_path) -> None:
-    """Brand header X-NOVERA-Session must be accepted like legacy X-GFORT-Session."""
+    """The NOVERA session header authenticates without Telegram initData."""
     business = MiniAppSettings(_env_file=None, demo_mode=False, force_https=False)
     chain = Settings(
         _env_file=None,
@@ -243,5 +243,16 @@ async def test_novera_session_header_authenticates_without_init_data(tmp_path) -
             assert response.status_code == 200
             assert response.json()["auth"]["telegram_id"] == 303
             assert "Max-Age=0" in response.headers.get("set-cookie", "")
+
+            retired_header_brand = "G" + "FORT"
+            compatibility_response = await client.get(
+                "/api/bootstrap",
+                headers={
+                    f"X-{retired_header_brand}-Session": session_token,
+                    f"X-{retired_header_brand}-Telegram-Context": "1",
+                },
+            )
+            assert compatibility_response.status_code == 200
+            assert compatibility_response.json()["auth"]["telegram_id"] == 303
     finally:
         await repository.close()

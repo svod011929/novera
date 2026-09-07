@@ -20,7 +20,7 @@ def backup_database(source: Path, destination: Path) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create an online GFORT SQLite backup")
+    parser = argparse.ArgumentParser(description="Create an online NOVERA SQLite backup")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     source = Settings().database_path
