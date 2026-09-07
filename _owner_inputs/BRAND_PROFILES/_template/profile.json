@@ -1,0 +1,31 @@
+{
+  "id": "example-bot",
+  "product_name": "EXAMPLE",
+  "product_name_title": "Example",
+  "tagline": "Your Tagline",
+  "theme_color": "#00050A",
+  "default_domain": "example.com",
+  "default_ipv4": "203.0.113.10",
+  "default_owner_id": "1000000000",
+  "assets": {
+    "logo": "assets/logo.jpg",
+    "mark": "assets/logo.jpg",
+    "board": "assets/board.jpg"
+  },
+  "colors": {
+    "color-bg": "#00050A",
+    "color-bg-2": "#001428",
+    "color-accent": "#5CE1FF",
+    "color-accent-2": "#8B5CFF",
+    "color-accent-hot": "#3AA8FF",
+    "color-text": "#F4FBFF",
+    "color-muted": "#8FB4D2",
+    "brand-gradient": "linear-gradient(115deg,#9AF6FF 0%,#5CE1FF 38%,#4A8CFF 68%,#8B5CFF 100%)",
+    "cta-gradient": "linear-gradient(115deg,#5CE1FF 0%,#3AA8FF 48%,#8B5CFF 100%)",
+    "progress-gradient": "linear-gradient(90deg,#8B5CFF 0%,#3AA8FF 42%,#5CE1FF 100%)"
+  },
+  "fonts": {
+    "display": "\"Orbitron\",ui-sans-serif,system-ui,sans-serif",
+    "body": "\"Manrope\",ui-sans-serif,system-ui,sans-serif"
+  }
+}

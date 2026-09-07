@@ -1,5 +1,15 @@
 # CHANGELOG (Cursor working notes)
 
+## 2026-09-07 — Branded bootstrap installer profiles
+
+- Added `_owner_inputs/BRAND_PROFILES/` (`novera` + `_template`) with non-secret
+  name/logo/colors/domain/owner defaults.
+- Extended `scripts/build_bootstrap_installer.ps1 -BrandProfile <id>` and
+  `scripts/apply_brand_profile.ps1` to bake branding into the one-file installer.
+- Stub uses `$APP_NAME` for public ready-check/messages; technical payload marker
+  and `NOVERA_*` env names stay stable.
+- Docs: `_owner_inputs/BRAND_PROFILES/README.md`, README white-label section.
+
 ## 2026-09-07 — NOVERA-only public branding
 
 - Removed the retired brand from bot notifications, inline buttons, API errors,

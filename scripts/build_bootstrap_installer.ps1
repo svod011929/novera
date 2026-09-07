@@ -1,10 +1,16 @@
-# Build a one-file NOVERA fresh-VPS bootstrap installer.
+# Build a one-file branded fresh-VPS bootstrap installer.
 # The output never contains bot tokens, RPC/WSS credentials, seed phrases,
 # runtime encryption keys, .env files or databases.
+#
+# Usage:
+#   powershell -NoProfile -File scripts\build_bootstrap_installer.ps1
+#   powershell -NoProfile -File scripts\build_bootstrap_installer.ps1 -BrandProfile novera
+#   powershell -NoProfile -File scripts\build_bootstrap_installer.ps1 -BrandProfile acme
 
 [CmdletBinding()]
 param(
-    [string]$OutDir = ""
+    [string]$OutDir = "",
+    [string]$BrandProfile = "novera"
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,9 +19,16 @@ if (-not $OutDir) {
     $OutDir = Join-Path $Root "_cursor_output\releases"
 }
 
+. (Join-Path $PSScriptRoot "apply_brand_profile.ps1")
+$ResolvedBrand = Resolve-BrandProfile -Root $Root -BrandProfile $BrandProfile
+$BrandId = [string]$ResolvedBrand.Data.id
+$ProductName = [string]$ResolvedBrand.Data.product_name
+$ProductSlug = ($BrandId -replace '[^a-z0-9]+', '-').Trim('-').ToUpperInvariant()
+if (-not $ProductSlug) { $ProductSlug = "NOVERA" }
+
 $Stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
-$ReleaseName = "NOVERA_BOOTSTRAP_INSTALLER_$Stamp"
-$ReleaseVersion = "v10.6-bootstrap-$Stamp"
+$ReleaseName = "${ProductSlug}_BOOTSTRAP_INSTALLER_$Stamp"
+$ReleaseVersion = "v10.6-bootstrap-$BrandId-$Stamp"
 $Marker = "__NOVERA_BOOTSTRAP_PAYLOAD__"
 $StubPath = Join-Path $Root "deploy\NOVERA_BOOTSTRAP_INSTALLER.stub.sh"
 $Work = Join-Path $env:TEMP "novera-bootstrap-$Stamp"
@@ -30,6 +43,7 @@ if (-not (Test-Path -LiteralPath $StubPath -PathType Leaf)) {
 
 New-Item -ItemType Directory -Force -Path $OutDir, $PayloadDir | Out-Null
 
+Write-Host "[BOOTSTRAP] Brand profile: $BrandId ($ProductName)"
 Write-Host "[BOOTSTRAP] Staging payload without runtime state or secrets..."
 $Include = @(
     "delta_backend", "frontend", "deploy", "scripts", "tests", "secrets",
@@ -72,7 +86,7 @@ Get-ChildItem -LiteralPath $PayloadDir -Recurse -File -Force |
     } |
     Remove-Item -Force
 
-# Fresh installers must contain only the NOVERA brand. Deployment aliases and
+# Fresh installers must contain only the active public brand. Deployment aliases and
 # filesystem paths from retired builds are rewritten consistently inside the
 # isolated payload; the currently running VPS layout is not touched.
 $RetiredBrand = "G" + "FORT"
@@ -98,6 +112,9 @@ Get-ChildItem -LiteralPath $PayloadDir -Recurse -File -Force |
         }
     }
 
+Write-Host "[BOOTSTRAP] Applying brand profile onto staged payload..."
+Apply-BrandProfileToPayload -ResolvedProfile $ResolvedBrand -PayloadDir $PayloadDir -Utf8NoBom $Utf8NoBom
+
 $Critical = @(
     "delta_backend/api.py",
     "delta_backend/config.py",
@@ -110,6 +127,8 @@ $Critical = @(
     "frontend/assets/app.js",
     "frontend/index.html",
     "frontend/assets/novera-brand.css",
+    "frontend/assets/design-tokens.css",
+    "deploy/BRAND_PROFILE.json",
     "requirements.txt",
     "pyproject.toml",
     "compose.vps.yml",
@@ -164,13 +183,13 @@ try {
 $TarHash = (Get-FileHash -LiteralPath $TarPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 $Stub = Get-Content -LiteralPath $StubPath -Raw -Encoding UTF8
-if (($Stub -split "`r?`n" | Where-Object { $_ -eq $Marker }).Count -ne 1) {
+if (@($Stub -split "`r?`n" | Where-Object { $_ -eq $Marker }).Count -ne 1) {
     throw "Bootstrap stub must contain exactly one payload marker"
 }
+$Stub = Apply-BrandProfileToStubText -ResolvedProfile $ResolvedBrand -StubText $Stub
 $Stub = $Stub.Replace("__PAYLOAD_TAR_SHA256__", $TarHash)
 $Stub = $Stub.Replace("__RELEASE_VERSION__", $ReleaseVersion)
-$Stub = $Stub.Replace($RetiredBrand, "NOVERA")
-$Stub = $Stub.Replace($RetiredBrand.ToLowerInvariant(), "novera")
+# Do not rewrite the technical payload marker or NOVERA_* env names.
 $Stub = $Stub -replace "`r`n", "`n" -replace "`r", "`n"
 if (-not $Stub.EndsWith("`n")) { $Stub += "`n" }
 
@@ -236,16 +255,18 @@ if ($Leaks) {
 $Manifest = @(
     "release=$ReleaseName",
     "version=$ReleaseVersion",
+    "brand_profile=$BrandId",
+    "product_name=$ProductName",
     "built_utc=$Stamp",
     "installer_sha256=$InstallerHash",
     "payload_tar_sha256=$TarHash",
     "contains_runtime_secrets=false",
-    "default_domain=bnbb.tech",
-    "default_ipv4=170.168.91.129",
-    "default_owner_id=8054710484",
+    "default_domain=$([string]$ResolvedBrand.Data.default_domain)",
+    "default_ipv4=$([string]$ResolvedBrand.Data.default_ipv4)",
+    "default_owner_id=$([string]$ResolvedBrand.Data.default_owner_id)",
     ""
 ) + @($PayloadManifestLines)
-if (($Manifest | Where-Object { $_ -match "^[a-f0-9]{64}  " }).Count -ne $Critical.Count) {
+if (@($Manifest | Where-Object { $_ -match "^[a-f0-9]{64}  " }).Count -ne @($Critical).Count) {
     throw "External manifest does not contain every critical payload hash"
 }
 $ManifestPath = Join-Path $OutDir "BOOTSTRAP_MANIFEST_$Stamp.txt"
@@ -259,6 +280,7 @@ Write-Host ""
 Write-Host "[BOOTSTRAP] OK installer: $InstallerPath"
 Write-Host "[BOOTSTRAP] OK SHA-256:  $InstallerHash"
 Write-Host "[BOOTSTRAP] OK manifest: $ManifestPath"
+Write-Host "[BOOTSTRAP] Brand:      $BrandId / $ProductName"
 Write-Host "[BOOTSTRAP] Bot token will be requested securely at install time."
 
 Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue

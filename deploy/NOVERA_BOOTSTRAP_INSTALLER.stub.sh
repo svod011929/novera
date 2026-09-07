@@ -27,22 +27,22 @@ if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
     SELF_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 fi
 
-log(){ printf '\033[1;36m[NOVERA]\033[0m %s\n' "$*"; }
+log(){ printf '\033[1;36m[%s]\033[0m %s\n' "$APP_NAME" "$*"; }
 ok(){ printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
 warn(){ printf '\033[1;33m[WARN]\033[0m %s\n' "$*" >&2; }
 fail(){ printf '\033[1;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage(){
     cat <<EOF
-NOVERA one-file bootstrap installer
+$APP_NAME one-file bootstrap installer
 
 Usage:
   sudo bash $(basename "$0")
-  sudo bash $(basename "$0") --domain bnbb.tech --ip 170.168.91.129 --owner-id 8054710484
+  sudo bash $(basename "$0") --domain $DEFAULT_DOMAIN --ip $DEFAULT_IPV4 --owner-id $DEFAULT_OWNER_ID
 
 The installer prompts for a NEW Telegram bot token without echoing it.
 RPC, WSS and the payout seed are configured later by the immutable Owner
-inside the NOVERA Mini App. Financial operations stay locked until activation.
+inside the $APP_NAME Mini App. Financial operations stay locked until activation.
 EOF
 }
 
@@ -84,7 +84,7 @@ require_fresh_host(){
     [[ "$EXPECTED_IPV4" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || fail "Invalid IPv4 address"
     [[ "$OWNER_ID" =~ ^[0-9]{5,20}$ ]] || fail "Owner ID must be a numeric Telegram ID"
     if [[ -e "$COMPAT_LINK" || -e "$CURRENT_LINK" || -f "$STATE_DIR/data/delta.sqlite3" ]]; then
-        fail "Existing NOVERA state detected. Fresh bootstrap refuses to overwrite it."
+        fail "Existing $APP_NAME state detected. Fresh bootstrap refuses to overwrite it."
     fi
     if [[ -d "$RELEASE_ROOT" ]] && find "$RELEASE_ROOT" -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
         fail "$RELEASE_ROOT is not empty. Recover or archive it before a fresh install."
@@ -152,6 +152,7 @@ if not header:
 print(int(email.utils.parsedate_to_datetime(header).timestamp()))
 PYCLOCK
 )" || return 1
+    # User-Agent stays on the technical bootstrap family name on purpose.
     local_epoch="$(date +%s)"
     skew=$(( local_epoch - remote_epoch ))
     [[ "$skew" -lt 0 ]] && skew=$(( -skew ))
@@ -362,7 +363,7 @@ EOF
 }
 
 build_and_preflight(){
-    log "Validating Compose and building the NOVERA image"
+    log "Validating Compose and building the $APP_NAME image"
     cd "$CANDIDATE_DIR"
     bash deploy/vps-preflight.sh
     docker compose -f "$COMPOSE_FILE" config --quiet
@@ -392,7 +393,7 @@ promote_and_start(){
     done
     [[ "$healthy" == "1" ]] || {
         docker compose -f "$COMPOSE_FILE" logs --tail=120 --no-color delta >&2 || true
-        fail "NOVERA backend did not become healthy"
+        fail "$APP_NAME backend did not become healthy"
     }
 
     local ready body
@@ -402,7 +403,7 @@ promote_and_start(){
             body="$(curl -fsS --connect-timeout 4 --max-time 12 -H 'Cache-Control: no-cache' "https://$DOMAIN/?bootstrap=$STAMP" 2>/dev/null || true)"
             if printf '%s' "$ready" | jq -e \
                 '.status == "ready" and .database == true and .setup.status == "bootstrap" and .setup.financial_ready == false' >/dev/null 2>&1 \
-                && [[ "$body" == *"NOVERA"* ]]; then
+                && [[ "$body" == *"$APP_NAME"* ]]; then
                 ok "Public HTTPS, API and fail-closed setup mode are ready"
                 return 0
             fi
@@ -410,13 +411,13 @@ promote_and_start(){
         sleep 2
     done
     docker compose -f "$COMPOSE_FILE" logs --tail=120 --no-color caddy delta >&2 || true
-    fail "Public NOVERA bootstrap did not become ready"
+    fail "Public $APP_NAME bootstrap did not become ready"
 }
 
 print_summary(){
     cat <<EOF
 
-NOVERA bootstrap installation completed.
+$APP_NAME bootstrap installation completed.
 
 Mini App:       https://$DOMAIN/
 Owner ID:      $OWNER_ID
@@ -426,7 +427,7 @@ Setup state:   bootstrap (all financial operations locked)
 
 Next:
 1. Open the bot from Telegram as Owner ID $OWNER_ID.
-2. Open NOVERA -> Admin -> System.
+2. Open $APP_NAME -> Admin -> System.
 3. Validate RPC/WSS/seed, verify the derived treasury address, then activate.
 4. After restart, enable only approved financial switches under Admin -> Terms.
 

@@ -17,7 +17,9 @@ def test_bootstrap_stub_is_one_file_fail_closed_installer() -> None:
     assert stub.count("\n__NOVERA_BOOTSTRAP_PAYLOAD__\n") == 1
     assert stub.index("exit 0") < stub.index("\n__NOVERA_BOOTSTRAP_PAYLOAD__\n")
     assert "read -r -s" in stub
-    assert "Existing NOVERA state detected" in stub
+    assert 'APP_NAME="NOVERA"' in stub
+    assert "Existing $APP_NAME state detected" in stub
+    assert '[[ "$body" == *"$APP_NAME"* ]]' in stub
     assert "CHAIN_ENABLED=false" in stub
     assert "DEPOSITS_ENABLED=false" in stub
     assert "INVESTMENTS_ENABLED=false" in stub
@@ -55,6 +57,25 @@ def test_builder_includes_dockerignore_and_round_trip_checks() -> None:
     assert "runtime_config_key.txt" in builder
     assert "Token-shaped literal found outside test fixtures" in builder
     assert "Retired brand found in bootstrap payload" in builder
+    assert "BrandProfile" in builder
+    assert "apply_brand_profile.ps1" in builder
+    assert "deploy/BRAND_PROFILE.json" in builder
+
+
+def test_brand_profiles_exist_for_bootstrap() -> None:
+    novera = ROOT / "_owner_inputs" / "BRAND_PROFILES" / "novera" / "profile.json"
+    template = ROOT / "_owner_inputs" / "BRAND_PROFILES" / "_template" / "profile.json"
+    apply = _text("scripts/apply_brand_profile.ps1")
+    assert novera.is_file()
+    assert template.is_file()
+    assert (ROOT / "_owner_inputs" / "BRAND_PROFILES" / "novera" / "assets" / "logo.jpg").is_file()
+    data = novera.read_text(encoding="utf-8")
+    assert '"product_name": "NOVERA"' in data
+    assert "bot_token" not in data.lower()
+    assert "SEED_PHRASE" not in data
+    assert "Assert-BrandProfileSafe" in apply
+    assert "Apply-BrandProfileToPayload" in apply
+    assert "Apply-BrandProfileToStubText" in apply
 
 
 def test_safe_update_is_staged_with_rollback_and_frontend_mode() -> None:

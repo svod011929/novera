@@ -35,6 +35,13 @@
 
 > Репозиторий приватный — нужен GitHub-токен. Сначала `gh auth login` на рабочей машине, затем запуск **от root** на чистом Ubuntu/Debian VPS.
 
+### 0) Для не-разработчика
+
+Дважды кликните **`СОБРАТЬ_БОТА.bat`** в корне проекта — мастер задаст простые
+вопросы и сам подготовит установщик. Инструкция на 7 шагов:
+[`_owner_inputs/BRAND_PROFILES/README.md`](./_owner_inputs/BRAND_PROFILES/README.md).
+Дальше — шаги 1–2 ниже (загрузка на VPS и запуск).
+
 ### 1) Авторизация (один раз)
 
 ```bash
@@ -59,7 +66,7 @@ curl -fsSL \
 Что делает обёртка:
 
 1. скачивает закреплённый one-file installer из этого репо  
-2. проверяет **SHA-256** `759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45`
+2. проверяет **SHA-256** `fc5ae5080e3339d526e1710afd6a41e817d64144e6a2d5a6c30bba400b01c003`
 3. запускает его (скрытый ввод **нового** токена BotFather)
 
 ### Пример для production (bnbb.tech)
@@ -80,14 +87,14 @@ curl -fsSL \
 ```bash
 # ноутбук
 gh api -H "Accept: application/vnd.github.raw" \
-  "/repos/svod011929/novera/contents/_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh" \
-  > NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh
+  "/repos/svod011929/novera/contents/_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-224025.sh" \
+  > NOVERA_BOOTSTRAP_INSTALLER_20260907-224025.sh
 
-echo '759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45  NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh' \
+echo 'fc5ae5080e3339d526e1710afd6a41e817d64144e6a2d5a6c30bba400b01c003  NOVERA_BOOTSTRAP_INSTALLER_20260907-224025.sh' \
   | sha256sum -c -
 
-scp NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh root@YOUR_VPS:/root/
-ssh root@YOUR_VPS 'bash NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh \
+scp NOVERA_BOOTSTRAP_INSTALLER_20260907-224025.sh root@YOUR_VPS:/root/
+ssh root@YOUR_VPS 'bash NOVERA_BOOTSTRAP_INSTALLER_20260907-224025.sh \
   --domain YOUR_DOMAIN --ip YOUR_PUBLIC_IP --owner-id YOUR_TELEGRAM_ID'
 ```
 
@@ -136,6 +143,16 @@ powershell -NoProfile -File scripts\safe_update_remote.ps1 -Mode full
 
 ---
 
+## Новый брендированный installer (для новичков)
+
+Дважды кликните **`СОБРАТЬ_БОТА.bat`** в корне проекта → ответьте на вопросы → залейте `.sh` на VPS.
+
+Инструкция на 7 шагов: [`_owner_inputs/BRAND_PROFILES/README.md`](./_owner_inputs/BRAND_PROFILES/README.md).
+
+**В installer нет** bot token / RPC / WSS / seed / runtime key — токен спросит сервер (BotFather).
+
+---
+
 ## Карта репозитория
 
 ```
@@ -145,18 +162,21 @@ deploy/            safe-update, backup, restore, bootstrap stub
 scripts/           сборка и remote-promote
 tests/             pytest (финансы, security, bootstrap, admin)
 _cursor_output/    решения, отчёты, манифесты + pinned installer
-_owner_inputs/     decision pack владельца (принят 2026-09-06)
+_owner_inputs/     decision pack владельца + BRAND_PROFILES
 ```
 
 Закреплённый installer:
 
 | Артефакт | Значение |
 |----------|----------|
-| Файл | `_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh` |
-| SHA-256 | `759fe144e5520805576cb124030a6fc08bbd2a540e3cd2bf6e67ef25b2549b45` |
+| Файл | `_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-224025.sh` |
+| SHA-256 | `fc5ae5080e3339d526e1710afd6a41e817d64144e6a2d5a6c30bba400b01c003` |
 | Точка входа | [`install.sh`](./install.sh) |
+| Манифест | `_cursor_output/releases/BOOTSTRAP_MANIFEST_20260907-224025.txt` |
 
-Устарел (не использовать на Ubuntu 26.04): `…20260905-220159.sh`.
+Более ранние `_BOOTSTRAP_INSTALLER_*.sh` в этой папке — устаревшие сборки,
+не использовать. Всегда собирайте новый файл через `СОБРАТЬ_БОТА.bat` или
+`scripts\build_bootstrap_installer.ps1` вместо переиспользования старого.
 
 ---
 

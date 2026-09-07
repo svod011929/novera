@@ -1,5 +1,24 @@
 # TEST_REPORT
 
+## Branded bootstrap profiles + wizard — 2026-09-07/08
+
+- `python -m pytest -q` — **99 passed, 1 failed**. The 1 failure
+  (`test_repository.py::test_connect_rebrands_durable_notifications`, missing
+  `telegram_html` key) pre-dates this change set (reproduced identically on the
+  prior commit via `git stash`); unrelated to branding/installer work, left
+  open as a separate known issue, not fixed here.
+- Extended `tests/test_bootstrap_release.py` (stub `$APP_NAME`, BrandProfile
+  wiring, profile fixtures) — all new assertions PASS.
+- `scripts/build_bootstrap_installer.ps1 -BrandProfile novera` — PASS
+  (round-trip, no secrets, hashes match manifest)
+  → `NOVERA_BOOTSTRAP_INSTALLER_20260907-194204.sh` (pinned in README).
+- Smoke brand `AURORA` (`smoke-demo`) — PASS: `APP_NAME`/defaults baked; index
+  title/wordmark/tagline; design-token colors; `NOVERA_BOT_TOKEN_FILE` + payload
+  marker unchanged. Smoke artifacts removed after check.
+- Beginner wizard `scripts\make_branded_installer.ps1` — non-interactive smoke
+  PASS (`SMOKEBOT` profile); advanced `-BrandProfile novera` path unaffected.
+  Test-only profile/installer artifacts removed before commit.
+
 ## Decision pack + System wizard + admin idempotency — 2026-09-06
 
 - `python -m pytest -q` — **91 passed, 0 failed**

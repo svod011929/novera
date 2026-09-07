@@ -22,7 +22,7 @@ _cursor_output/releases/*
 !_cursor_output/releases/*.sha256
 !_cursor_output/releases/*MANIFEST*
 !_cursor_output/releases/*.txt
-!_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-103836.sh
+!_cursor_output/releases/NOVERA_BOOTSTRAP_INSTALLER_20260907-224025.sh
 _owner_inputs/DESIGN_REFERENCES/*
 !_owner_inputs/DESIGN_REFERENCES/PUT_SCREENSHOTS_HERE.md
 _owner_inputs/BRAND_ASSETS/*
