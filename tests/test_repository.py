@@ -346,3 +346,46 @@ async def test_admin_user_detail_includes_partner_turnovers(tmp_path) -> None:
         assert ordered_ids[0] == 11  # higher structure turnover first
     finally:
         await repository.close()
+
+
+async def test_admin_user_detail_partner_structure_stops_at_depth_5(tmp_path) -> None:
+    business = MiniAppSettings(_env_file=None)
+    repository = DeltaRepository(tmp_path / "delta.sqlite3", business)
+    await repository.connect()
+    try:
+        # Chain under a single direct partner of the admin-viewed user:
+        # leader(30) -> partner(31) -> l1(32) -> l2(33) -> l3(34) -> l4(35)
+        #   -> l5(36) -> l6(37)
+        # Relative to `partner`, l1..l5 are depth 1..5 (should count toward
+        # structure turnover/member count); l6 is depth 6 and must NOT count.
+        await repository.ensure_user(30, "leader", "Leader", "ru")
+        await repository.set_wallet(30, WALLET_ONE)
+        chain_ids = [31, 32, 33, 34, 35, 36, 37]
+        referrer = 30
+        for offset, uid in enumerate(chain_ids):
+            await repository.ensure_user(uid, f"user{uid}", f"User{uid}", "ru", referrer_id=referrer)
+            await repository.set_wallet(uid, f"0x{uid:040x}")
+            referrer = uid
+
+        deposit_minors: dict[int, int] = {}
+        for index, uid in enumerate(chain_ids):
+            amount = str(10 + index)
+            deposit_id = await pay_invoice(repository, uid, amount, uid)
+            deposit_minors[uid] = await deposit_principal_minor(repository, deposit_id)
+
+        detail = await repository.admin_user_detail(30)
+        partners = {int(p["telegram_id"]): p for p in detail["partners"]}
+        assert set(partners) == {31}
+
+        partner = partners[31]
+        # l1..l5 (depth 1..5 relative to the partner) count toward structure.
+        l1_to_l5_minor = sum(deposit_minors[uid] for uid in chain_ids[1:6])
+        l6_minor = deposit_minors[37]
+        assert l6_minor > 0
+        assert int(partner["structure_turnover_minor"]) == l1_to_l5_minor
+        assert int(partner["structure_member_count"]) == 5
+        # Regression guard: depth-6 (l6) must NOT leak into the totals.
+        assert int(partner["structure_turnover_minor"]) != l1_to_l5_minor + l6_minor
+        assert int(partner["structure_member_count"]) != 6
+    finally:
+        await repository.close()

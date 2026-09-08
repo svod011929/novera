@@ -498,7 +498,7 @@
       confirmClearWallet:'Очистить кошелёк выплат пользователя?',
       confirmBlockUser:'Заблокировать этого пользователя?',
       confirmUnblockUser:'Разблокировать этого пользователя?',
-      partnerStatsTitle:'Партнёрская сводка',personalTurnover:'Личный оборот',structureTurnover:'Оборот структуры',structureMembers:'В структуре'
+      partnerStatsTitle:'Партнёрская сводка',personalTurnover:'Личный оборот (все)',structureTurnover:'Оборот структуры (все)',structureMembers:'В структуре'
     },
     en:{
       userTabOverview:'Overview',userTabInvestments:'Investments',userTabPayouts:'Payouts',userTabReferral:'Referral',userTabAccess:'Access',userTabAudit:'Audit',
@@ -510,7 +510,7 @@
       confirmClearWallet:'Clear this user payout wallet?',
       confirmBlockUser:'Block this user?',
       confirmUnblockUser:'Unblock this user?',
-      partnerStatsTitle:'Partner summary',personalTurnover:'Personal turnover',structureTurnover:'Structure turnover',structureMembers:'In structure'
+      partnerStatsTitle:'Partner summary',personalTurnover:'Personal turnover (all deposits)',structureTurnover:'Structure turnover (all deposits)',structureMembers:'In structure'
     },
     uk:{
       userTabOverview:'Огляд',userTabInvestments:'Інвестиції',userTabPayouts:'Виплати',userTabReferral:'Партнерка',userTabAccess:'Доступ',userTabAudit:'Журнал',
@@ -522,7 +522,7 @@
       confirmClearWallet:'Очистити гаманець виплат користувача?',
       confirmBlockUser:'Заблокувати цього користувача?',
       confirmUnblockUser:'Розблокувати цього користувача?',
-      partnerStatsTitle:'Партнерська зведення',personalTurnover:'Особистий оборот',structureTurnover:'Оборот структури',structureMembers:'У структурі'
+      partnerStatsTitle:'Партнерська зведення',personalTurnover:'Особистий оборот (всі)',structureTurnover:'Оборот структури (всі)',structureMembers:'У структурі'
     }
   };
   Object.entries(ADMIN_USER_CARD_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
