@@ -2564,9 +2564,46 @@ class DeltaRepository:
             )
             payouts = [dict(row) for row in await cursor.fetchall()]
             cursor = await connection.execute(
-                "SELECT telegram_id, username, first_name, created_at FROM users "
-                "WHERE referrer_id = ? ORDER BY created_at DESC LIMIT 100",
-                (user_id,),
+                """
+                WITH RECURSIVE tree(root_id, telegram_id, depth) AS (
+                    SELECT u.telegram_id AS root_id, u.telegram_id, 0
+                    FROM users AS u
+                    WHERE u.referrer_id = ?
+                    UNION ALL
+                    SELECT tree.root_id, child.telegram_id, tree.depth + 1
+                    FROM users AS child
+                    JOIN tree ON child.referrer_id = tree.telegram_id
+                    WHERE tree.depth < 5
+                ),
+                personal AS (
+                    SELECT user_id, COALESCE(SUM(principal_minor), 0) AS personal_turnover_minor,
+                           COUNT(id) AS deposit_count
+                    FROM deposits
+                    GROUP BY user_id
+                ),
+                structure AS (
+                    SELECT tree.root_id,
+                           COALESCE(SUM(CASE WHEN tree.depth > 0 THEN deposits.principal_minor ELSE 0 END), 0)
+                             AS structure_turnover_minor,
+                           COUNT(DISTINCT CASE WHEN tree.depth > 0 THEN tree.telegram_id END)
+                             AS structure_member_count
+                    FROM tree
+                    LEFT JOIN deposits ON deposits.user_id = tree.telegram_id
+                    GROUP BY tree.root_id
+                )
+                SELECT u.telegram_id, u.username, u.first_name, u.created_at,
+                       COALESCE(personal.personal_turnover_minor, 0) AS personal_turnover_minor,
+                       COALESCE(personal.deposit_count, 0) AS deposit_count,
+                       COALESCE(structure.structure_turnover_minor, 0) AS structure_turnover_minor,
+                       COALESCE(structure.structure_member_count, 0) AS structure_member_count
+                FROM users AS u
+                LEFT JOIN personal ON personal.user_id = u.telegram_id
+                LEFT JOIN structure ON structure.root_id = u.telegram_id
+                WHERE u.referrer_id = ?
+                ORDER BY structure_turnover_minor DESC, personal_turnover_minor DESC, u.created_at DESC
+                LIMIT 100
+                """,
+                (user_id, user_id),
             )
             partners = [dict(row) for row in await cursor.fetchall()]
             referrer = None
@@ -2635,11 +2672,26 @@ class DeltaRepository:
                 (user_id,),
             )
             referral_level_adjustments = [dict(row) for row in await cursor.fetchall()]
+
+        team_payload = await self.team(user_id)
+        team_stats = dict(team_payload.get("stats") or {})
+        partner_stats = {
+            "earned_minor": int(team_stats.get("earned_minor") or 0),
+            "today_minor": int(team_stats.get("today_minor") or 0),
+            "available_minor": int(team_stats.get("available_minor") or 0),
+            "personal_minor": int(team_stats.get("personal_minor") or 0),
+            "line_minor": int(team_stats.get("line_minor") or 0),
+            "team_count": int(team_stats.get("team_count") or 0),
+            "current_level": int(team_stats.get("current_level") or 0),
+            "levels_total": int(team_stats.get("levels_total") or 5),
+        }
+
         return {
             "user": dict(user),
             "deposits": deposits,
             "payouts": payouts,
             "partners": partners,
+            "partner_stats": partner_stats,
             "referrer": referrer,
             "stats": {**dep_stats, **payout_stats},
             "balance_adjustments": balance_adjustments,

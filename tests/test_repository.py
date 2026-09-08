@@ -29,6 +29,18 @@ async def pay_invoice(repository: DeltaRepository, user_id: int, amount: str, lo
     return int(result["deposit_id"])
 
 
+async def deposit_principal_minor(repository: DeltaRepository, deposit_id: int) -> int:
+    connection = repository._connection()
+    async with repository._lock:
+        cursor = await connection.execute(
+            "SELECT principal_minor FROM deposits WHERE id = ?",
+            (deposit_id,),
+        )
+        row = await cursor.fetchone()
+    assert row is not None
+    return int(row["principal_minor"])
+
+
 async def test_deposit_and_referral_payouts_are_idempotent(tmp_path) -> None:
     business = MiniAppSettings(_env_file=None)
     repository = DeltaRepository(tmp_path / "delta.sqlite3", business)
@@ -296,9 +308,15 @@ async def test_admin_user_detail_includes_partner_turnovers(tmp_path) -> None:
         await repository.ensure_user(13, "carol", "Carol", "ru", referrer_id=10)
         await repository.set_wallet(13, "0x0000000000000000000000000000000000000004")
 
-        await pay_invoice(repository, 11, "100", 11)
-        await pay_invoice(repository, 12, "40", 12)
-        await pay_invoice(repository, 13, "25", 13)
+        alice_deposit_id = await pay_invoice(repository, 11, "100", 11)
+        bob_deposit_id = await pay_invoice(repository, 12, "40", 12)
+        carol_deposit_id = await pay_invoice(repository, 13, "25", 13)
+        # Invoice amounts get a small anti-collision jitter (create_invoice), so
+        # compare against the actually recorded deposit principals rather than
+        # the nominal usdt_to_minor("...") values.
+        alice_personal_minor = await deposit_principal_minor(repository, alice_deposit_id)
+        bob_personal_minor = await deposit_principal_minor(repository, bob_deposit_id)
+        carol_personal_minor = await deposit_principal_minor(repository, carol_deposit_id)
 
         detail = await repository.admin_user_detail(10)
         assert "partner_stats" in detail
@@ -313,14 +331,14 @@ async def test_admin_user_detail_includes_partner_turnovers(tmp_path) -> None:
         assert set(partners) == {11, 13}
 
         alice = partners[11]
-        assert int(alice["personal_turnover_minor"]) == usdt_to_minor("100")
-        assert int(alice["structure_turnover_minor"]) == usdt_to_minor("40")
+        assert int(alice["personal_turnover_minor"]) == alice_personal_minor
+        assert int(alice["structure_turnover_minor"]) == bob_personal_minor
         assert int(alice["structure_member_count"]) == 1
         # Partner's own deposit must not inflate structure turnover
         assert int(alice["structure_turnover_minor"]) != int(alice["personal_turnover_minor"])
 
         carol = partners[13]
-        assert int(carol["personal_turnover_minor"]) == usdt_to_minor("25")
+        assert int(carol["personal_turnover_minor"]) == carol_personal_minor
         assert int(carol["structure_turnover_minor"]) == 0
         assert int(carol["structure_member_count"]) == 0
 
