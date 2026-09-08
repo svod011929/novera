@@ -134,8 +134,12 @@ class Settings(BaseSettings):
     scan_start_block: int = 0
     confirmation_blocks: int = 12
     scan_block_chunk: int = 1500
+    # Healthy WSS path: slow HTTP safety backfill. Degraded (no WSS): fast scan.
     deposit_scan_interval_seconds: int = 15
-    payout_interval_seconds: int = 10
+    deposit_scan_healthy_min_seconds: int = 60
+    deposit_scan_degraded_seconds: int = 4
+    payout_interval_seconds: int = 3
+    payout_batch_size: int = 8
     block_explorer_tx_url: str = "https://bscscan.com/tx/{tx_hash}"
     minimum_native_balance_wei: int = 1_000_000_000_000_000
     minimum_token_balance_usdt: Decimal = Decimal("1")

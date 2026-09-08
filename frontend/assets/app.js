@@ -232,6 +232,11 @@
       adminCircuitOk:'Circuit closed',
       adminNoStuck:'Застреваний нет',
       adminAgeSeconds:'возраст {sec} с',
+      adminAgeMinutes:'возраст {min} мин',
+      adminAgeHours:'возраст {hours} ч',
+      adminAgeHoursMinutes:'возраст {hours} ч {min} мин',
+      adminSafetyUnknown:'неизвестно',
+      adminSafetyUnknownHint:'Не удалось загрузить safety — статус не подтверждён',
       adminRetryHint:'Retry безопасен только для статуса failed: операция вернётся в очередь без повторной подписи confirmed-транзакции.',
       adminDepositAge:'возраст',
       adminUsersFilterAll:'Все',
@@ -282,6 +287,11 @@
       adminCircuitOk:'Circuit closed',
       adminNoStuck:'Nothing stuck',
       adminAgeSeconds:'age {sec}s',
+      adminAgeMinutes:'age {min} min',
+      adminAgeHours:'age {hours} h',
+      adminAgeHoursMinutes:'age {hours} h {min} min',
+      adminSafetyUnknown:'unknown',
+      adminSafetyUnknownHint:'Safety data unavailable — status not confirmed',
       adminRetryHint:'Retry is safe only for failed: it re-queues without re-signing a confirmed transaction.',
       adminDepositAge:'age',
       adminUsersFilterAll:'All',
@@ -443,7 +453,7 @@
       invoiceStatus:'Статус заявки',invoicePending:'Ожидает перевод',invoiceExpired:'Срок истёк',invoiceReused:'Повтор той же заявки',
       invoiceExactTitle:'Точная сумма к отправке',invoiceTailHint:'Сумма содержит уникальный хвост для сопоставления платежа. Отправьте её один в один.',
       invoiceAddressTitle:'Адрес казны',invoiceToken:'Токен',invoiceChainId:'Chain ID',
-      invoiceCountdown:'Осталось',invoiceMinutes:'мин',
+      invoiceCountdown:'Осталось',invoiceMinutes:'мин',invoiceSeconds:'сек',
       copyAddressDone:'Адрес скопирован',copyAmountDone:'Сумма скопирована',copyAllDone:'Реквизиты скопированы',
       depositsDisabledUi:'Пополнение временно недоступно',
       tooManyPendingInvoices:'Слишком много незакрытых заявок. Дождитесь зачисления или истечения срока.'
@@ -456,7 +466,7 @@
       invoiceStatus:'Invoice status',invoicePending:'Awaiting transfer',invoiceExpired:'Expired',invoiceReused:'Same invoice reused',
       invoiceExactTitle:'Exact amount to send',invoiceTailHint:'The amount includes a unique matching tail. Send it exactly as shown.',
       invoiceAddressTitle:'Treasury address',invoiceToken:'Token',invoiceChainId:'Chain ID',
-      invoiceCountdown:'Time left',invoiceMinutes:'min',
+      invoiceCountdown:'Time left',invoiceMinutes:'min',invoiceSeconds:'sec',
       copyAddressDone:'Address copied',copyAmountDone:'Amount copied',copyAllDone:'Payment details copied',
       depositsDisabledUi:'Deposits are temporarily unavailable',
       tooManyPendingInvoices:'Too many open invoices. Wait for credit or expiry.'
@@ -469,7 +479,7 @@
       invoiceStatus:'Статус заявки',invoicePending:'Очікує переказ',invoiceExpired:'Термін минув',invoiceReused:'Повтор тієї ж заявки',
       invoiceExactTitle:'Точна сума до відправки',invoiceTailHint:'Сума містить унікальний хвіст для зіставлення платежу. Надішліть її один в один.',
       invoiceAddressTitle:'Адреса казни',invoiceToken:'Токен',invoiceChainId:'Chain ID',
-      invoiceCountdown:'Залишилось',invoiceMinutes:'хв',
+      invoiceCountdown:'Залишилось',invoiceMinutes:'хв',invoiceSeconds:'сек',
       copyAddressDone:'Адресу скопійовано',copyAmountDone:'Суму скопійовано',copyAllDone:'Реквізити скопійовано',
       depositsDisabledUi:'Поповнення тимчасово недоступне',
       tooManyPendingInvoices:'Забагато відкритих заявок. Дочекайтесь зарахування або закінчення терміну.'
@@ -738,7 +748,11 @@
     broadcastImageFile:null, broadcastImageUrl:'', broadcastButtons:[], broadcastAudience:null, accountRefreshBusy:false,
     notifications:[], notificationUnread:0, notificationFilter:'all', notificationLastId:0, notificationTimer:null,
     adminInvestmentOps:{},
-    adminCloseInvestmentOps:{}
+    adminCloseInvestmentOps:{},
+    activeInvoice:null,
+    invoiceTimer:null,
+    walletDirty:false,
+    bootstrapInFlight:null
   };
 
   const loadTelegramSession = async (force=false) => {
@@ -860,8 +874,14 @@
     const seconds = Math.max(0, Math.floor(Date.now()/1000) - Number(ts || 0));
     if (!Number.isFinite(seconds) || !ts) return '';
     if (seconds < 60) return tr('adminAgeSeconds').replace('{sec}', String(seconds));
-    if (seconds < 3600) return tr('adminAgeSeconds').replace('{sec}', String(Math.floor(seconds/60)*60));
-    return tr('adminAgeSeconds').replace('{sec}', String(Math.floor(seconds/3600)*3600));
+    if (seconds < 3600) {
+      const mins = Math.floor(seconds / 60);
+      return tr('adminAgeMinutes').replace('{min}', String(mins));
+    }
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (mins <= 0) return tr('adminAgeHours').replace('{hours}', String(hours));
+    return tr('adminAgeHoursMinutes').replace('{hours}', String(hours)).replace('{min}', String(mins));
   };
   const openPayoutCounts = (payouts=[]) => {
     const counts={queued:0,signed:0,broadcast:0};
@@ -1130,10 +1150,14 @@
     $('termRate').textContent=percent(terms.daily_profit_bps);
     $('termsHeadline').textContent=`${percent(terms.daily_profit_bps)} · ${terms.payout_days||0} ${tr('days')}`;
     renderProfitCalculator(terms);
-    $('walletInput').value=user.payout_address||'';
+    const walletEl=$('walletInput');
+    if(walletEl && !(state.walletDirty || document.activeElement===walletEl)){
+      walletEl.value=user.payout_address||'';
+    }
     $('walletState').textContent=user.payout_address ? compactAddress(user.payout_address) : '';
     renderWalletImpact(data);
     updateDepositForm(data);
+    if(state.activeInvoice) renderInvoice(state.activeInvoice);
     $('referralLink').textContent=data.referral_link||'—';
 
     $('profileName').textContent=name;
@@ -1230,9 +1254,12 @@
     const filtered=state.historyFilter==='all'?events:events.filter((x)=>x.type===state.historyFilter);
     $('historyList').innerHTML=filtered.length?filtered.map((e)=>{
       const meta=historyStatusMeta(e.status);
+      const payoutConfirmed=e.type==='payouts' && String(e.status)==='confirmed';
+      const amountClass=payoutConfirmed?'amount-positive':(e.type==='payouts' && (e.status==='failed'||e.status==='expired')?'amount-negative':'');
+      const amountPrefix=e.type==='payouts'?(payoutConfirmed?'+':''):'';
       const addressLine=e.address?`<small class="history-payout-meta">${esc(e.type==='payouts'?tr('payoutAddressLabel'):tr('depositPayoutAddressLabel'))}: ${esc(compactAddress(e.address))}</small>`:'';
       const actionLine=`<div class="history-status-row ${esc(meta.tone)}"><span class="history-status-pill">${esc(meta.label)}</span><small>${esc(meta.hint)}${e.error?' · '+esc(e.error):''}</small></div>`;
-      return `<article class="list-card history-card"><div class="list-card-header"><div><strong>${esc(e.title)}</strong><small>#${esc(e.id)} · ${esc(fmtDate(e.ts))}</small></div><div><strong class="${e.type==='payouts'?'amount-positive':''}">${e.type==='payouts'?'+':''}${esc(e.amount)} USDT</strong><small class="status-text ${esc(e.status)}">${esc(statusText(e.status))}</small></div></div>${addressLine}${actionLine}${e.tx&&chain.explorer_tx_url?`<a class="tx-link" href="${esc(chain.explorer_tx_url.replace('{tx_hash}',e.tx))}" target="_blank" rel="noopener">${esc(compactAddress(e.tx))}</a>`:''}</article>`;
+      return `<article class="list-card history-card"><div class="list-card-header"><div><strong>${esc(e.title)}</strong><small>#${esc(e.id)} · ${esc(fmtDate(e.ts))}</small></div><div><strong class="${amountClass}">${amountPrefix}${esc(e.amount)} USDT</strong><small class="status-text ${esc(e.status)}">${esc(statusText(e.status))}</small></div></div>${addressLine}${actionLine}${e.tx&&chain.explorer_tx_url?`<a class="tx-link" href="${esc(chain.explorer_tx_url.replace('{tx_hash}',e.tx))}" target="_blank" rel="noopener">${esc(compactAddress(e.tx))}</a>`:''}</article>`;
     }).join(''):`<div class="empty-state">${esc(tr('noHistory'))}</div>`;
   }
 
@@ -1387,7 +1414,7 @@
     const address=$('walletInput').value.trim(); if(!/^0x[a-fA-F0-9]{40}$/.test(address)){toast(tr('invalidWallet'),'error');return;}
     const current=((state.data&&state.data.user&&state.data.user.payout_address)||'').trim();
     if(current && current.toLowerCase()!==address.toLowerCase() && !window.confirm(tr('confirmSaveWallet'))) return;
-    try{await api('/api/wallet',{method:'POST',body:JSON.stringify({address})});toast(tr('walletSaved'),'success');await refreshBootstrap();}catch(e){handleApiError(e);}
+    try{await api('/api/wallet',{method:'POST',body:JSON.stringify({address})});state.walletDirty=false;toast(tr('walletSaved'),'success');await refreshBootstrap();}catch(e){handleApiError(e);}
   }
   function updateDepositForm(data){
     const terms=(data&&data.terms)||(state.data&&state.data.terms)||{};
@@ -1406,6 +1433,10 @@
     const hasWallet=Boolean(user.payout_address);
     const depositsOk=Boolean(chain.enabled && chain.deposits_enabled && chain.payouts_enabled && chain.treasury_address);
     if ($('depositWalletGate')) $('depositWalletGate').classList.toggle('hidden', hasWallet);
+    if ($('depositChainGate')) {
+      $('depositChainGate').classList.toggle('hidden', !hasWallet || depositsOk);
+      if (!depositsOk) $('depositChainGate').textContent=tr('depositsDisabledUi');
+    }
     const btn=$('createDeposit');
     if (btn) {
       btn.disabled=!hasWallet || !depositsOk;
@@ -1419,34 +1450,53 @@
     if (!user.payout_address){toast(tr('setPayoutWalletFirst'),'error');switchView('wallet',{push:true});return;}
     if (!(chain.enabled && chain.deposits_enabled && chain.payouts_enabled && chain.treasury_address)){toast(tr('depositsDisabledUi'),'error');return;}
     if(!Number.isFinite(amount)||amount<Number(terms.deposit_min_usdt||1)||amount>Number(terms.deposit_max_usdt||100000)){toast(`${tr('amount')}: ${terms.deposit_min_usdt||1}–${terms.deposit_max_usdt||100000} USDT`,'error');return;}
-    const btn=$('createDeposit'); if(btn) btn.disabled=true;
+    const btn=$('createDeposit'); if(btn){btn.disabled=true;btn.dataset.busy='1';}
     try{
       const key=`invoice-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const invoice=await api('/api/deposits/invoice',{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({amount})});
+      state.activeInvoice=invoice;
+      try{sessionStorage.setItem('novera_active_invoice', JSON.stringify(invoice));}catch(_){}
       renderInvoice(invoice);toast(tr('invoiceCreated'),'success');
     }catch(e){handleApiError(e);}
-    finally{updateDepositForm(state.data);}
+    finally{if(btn) btn.dataset.busy='';updateDepositForm(state.data);}
+  }
+  function stopInvoiceTimer(){
+    if(state.invoiceTimer){clearInterval(state.invoiceTimer);state.invoiceTimer=null;}
   }
   function renderInvoice(invoice){
-    const box=$('invoiceBox'); if(!box)return;
+    const box=$('invoiceBox'); if(!box||!invoice)return;
     const address=String(invoice.treasury_address||'');
     const exact=String(invoice.exact_amount||'');
     const amountLabel=`${exact} USDT`;
     const token=String(invoice.token_symbol||'USDT');
     const chainId=invoice.chain_id!=null?String(invoice.chain_id):'—';
+    const invoiceId=invoice.id!=null?String(invoice.id):'';
     const expiresAt=Number(invoice.expires_at||0);
-    const now=Math.floor(Date.now()/1000);
-    const expired=expiresAt>0 && expiresAt<=now;
-    const minutesLeft=expiresAt>0?Math.max(0,Math.ceil((expiresAt-now)/60)):0;
-    const statusLabel=expired?tr('invoiceExpired'):tr('invoicePending');
-    const statusClass=expired?'failed':'queued';
+    const tick=()=>{
+      const now=Math.floor(Date.now()/1000);
+      const expired=expiresAt>0 && expiresAt<=now;
+      const secondsLeft=expiresAt>0?Math.max(0,expiresAt-now):0;
+      const minutesLeft=Math.ceil(secondsLeft/60);
+      const countdownLabel=expired
+        ? fmtDate(expiresAt)
+        : (secondsLeft>=60
+            ? `${minutesLeft} ${tr('invoiceMinutes')}`
+            : `${secondsLeft} ${tr('invoiceSeconds')}`);
+      const statusLabel=expired?tr('invoiceExpired'):tr('invoicePending');
+      const statusClass=expired?'failed':'queued';
+      const ttlStrong=box.querySelector('[data-invoice-ttl]');
+      const statusStrong=box.querySelector('[data-invoice-status]');
+      if(ttlStrong) ttlStrong.textContent=countdownLabel;
+      if(statusStrong){statusStrong.textContent=statusLabel;statusStrong.className=`tag ${statusClass}`;}
+      if(expired) stopInvoiceTimer();
+    };
     const reusedNote=invoice.reused?`<div class="invoice-reused">${esc(tr('invoiceReused'))}</div>`:'';
-    const allCopy=`${tr('network')}: BNB Smart Chain (BEP-20)\n${tr('invoiceToken')}: ${token}\n${tr('invoiceChainId')}: ${chainId}\n${tr('invoiceAddressTitle')}: ${address}\n${tr('invoiceExactTitle')}: ${amountLabel}`;
+    const allCopy=`${tr('network')}: BNB Smart Chain (BEP-20)\n${tr('invoiceToken')}: ${token}\n${tr('invoiceChainId')}: ${chainId}\n${tr('invoiceAddressTitle')}: ${address}\n${tr('invoiceExactTitle')}: ${exact}`;
     box.classList.remove('hidden');
     box.innerHTML=`
       <div class="invoice-head">
-        <div><p class="overline">${esc(tr('invoiceStatus'))}</p><strong class="tag ${statusClass}">${esc(statusLabel)}</strong></div>
-        <div class="invoice-ttl"><span>${esc(tr(expired?'validUntil':'invoiceCountdown'))}</span><strong>${esc(expired?fmtDate(expiresAt):`${minutesLeft} ${tr('invoiceMinutes')}`)}</strong></div>
+        <div><p class="overline">${esc(tr('invoiceStatus'))}</p><strong class="tag queued" data-invoice-status>${esc(tr('invoicePending'))}</strong>${invoiceId?`<small class="invoice-id">#${esc(invoiceId)}</small>`:''}</div>
+        <div class="invoice-ttl"><span>${esc(tr('invoiceCountdown'))}</span><strong data-invoice-ttl>—</strong></div>
       </div>
       ${reusedNote}
       <div class="invoice-hero-amount">
@@ -1467,9 +1517,12 @@
     box.querySelectorAll('[data-copy-invoice]').forEach((b)=>b.addEventListener('click',()=>{
       const mode=b.dataset.copyInvoice;
       if(mode==='address') copyText(address,'copyAddressDone');
-      else if(mode==='amount') copyText(amountLabel,'copyAmountDone');
+      else if(mode==='amount') copyText(exact,'copyAmountDone');
       else copyText(allCopy,'copyAllDone');
     }));
+    stopInvoiceTimer();
+    tick();
+    state.invoiceTimer=setInterval(tick,1000);
   }
 
   function showSessionError(){
@@ -1494,7 +1547,21 @@
     toast(apiErrorText(e&&e.detail,e&&e.status),'error');
   }
   async function refreshBootstrap(){
-    try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));$('sessionBanner').classList.add('hidden');render(data,{preserve:true});}catch(e){await handleApiError(e);}
+    if(state.bootstrapInFlight) return state.bootstrapInFlight;
+    state.bootstrapInFlight=(async()=>{
+      try{
+        const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));
+        $('sessionBanner').classList.add('hidden');
+        render(data,{preserve:true});
+        return true;
+      }catch(e){
+        await handleApiError(e);
+        return false;
+      }finally{
+        state.bootstrapInFlight=null;
+      }
+    })();
+    return state.bootstrapInFlight;
   }
   async function refreshTelegramAccountContext(){
     if (state.accountRefreshBusy) return;
@@ -1576,12 +1643,17 @@
     const pendingMinor=Number(queue.pending_minor||s.queued_minor||0);
     const oldestAge=queue.oldest_age_seconds;
     const circuitOpen=Boolean(safety&&safety.circuit_open);
-    const safetyStatus=safety&&safety.status?String(safety.status):'—';
+    const safetyMissing=!safety;
+    const safetyStatus=safetyMissing?tr('adminSafetyUnknown'):(safety&&safety.status?String(safety.status):'—');
     const refreshed=state.adminCache.summaryFetchedAt||Math.floor(Date.now()/1000);
     const setup=system&&system.setup?system.setup:(state.data&&state.data.setup)||{};
-    const stuckLine=oldestAge==null
-      ? tr('adminNoStuck')
-      : `${tr('adminStuckQueue')}: ${tr('adminAgeSeconds').replace('{sec}', String(oldestAge))}`;
+    const stuckLine=safetyMissing
+      ? tr('adminSafetyUnknownHint')
+      : (oldestAge==null
+        ? tr('adminNoStuck')
+        : `${tr('adminStuckQueue')}: ${ageLabel(Math.floor(Date.now()/1000) - Number(oldestAge))}`);
+    const circuitClass=safetyMissing?'queued':(circuitOpen?'failed':'confirmed');
+    const circuitLabel=safetyMissing?tr('adminSafetyUnknown'):(circuitOpen?tr('adminCircuitOpen'):tr('adminCircuitOk'));
     $('admin-overview').innerHTML=`
       <p class="admin-refresh-meta">${esc(tr('adminLastRefresh'))}: ${esc(fmtDate(refreshed))}</p>
       <div class="overview-grid">
@@ -1590,7 +1662,7 @@
         <article class="panel overview-card"><h3>${esc(tr('netFlow'))}</h3><p>${money(net)} USDT</p></article>
       </div>
       <article class="panel overview-ops-card">
-        <div class="section-row"><div><p class="overline">${esc(tr('adminOpsHealth'))}</p><h3>${esc(tr('adminSafetyStatus'))}: ${esc(safetyStatus)}</h3></div><span class="tag ${circuitOpen?'failed':'confirmed'}">${esc(circuitOpen?tr('adminCircuitOpen'):tr('adminCircuitOk'))}</span></div>
+        <div class="section-row"><div><p class="overline">${esc(tr('adminOpsHealth'))}</p><h3>${esc(tr('adminSafetyStatus'))}: ${esc(safetyStatus)}</h3></div><span class="tag ${circuitClass}">${esc(circuitLabel)}</span></div>
         <div class="detail-row"><span>${esc(tr('adminQueuePending'))}</span><strong>${esc(pendingCount)} · ${money(pendingMinor)} USDT</strong></div>
         <div class="detail-row"><span>${esc(tr('failedPayouts'))}</span><strong>${esc(s.failed_payouts||0)}</strong></div>
         <div class="detail-row"><span>${esc(tr('setupState'))}</span><strong>${esc(setupStatusText(setup.status||'bootstrap'))}</strong></div>
@@ -2187,16 +2259,49 @@
     $('adminLogsList').innerHTML=rows.length?rows.map((r)=>`<article class="list-card"><div class="list-card-header"><strong>${esc(r.event_type)}</strong><span class="date-text">${esc(fmtDate(r.created_at))}</span></div><div class="log-details">${esc(r.details||'—')}</div></article>`).join(''):`<div class="empty-state">${esc(tr('noLogs'))}</div>`;
   }
 
+  function clearPollingTimers(){
+    if(state.refreshTimer){clearInterval(state.refreshTimer);state.refreshTimer=null;}
+    if(state.notificationTimer){clearInterval(state.notificationTimer);state.notificationTimer=null;}
+  }
+  function startPollingTimers(){
+    clearPollingTimers();
+    const bootstrapMs=document.visibilityState==='hidden'?120000:30000;
+    const notifyMs=document.visibilityState==='hidden'?60000:15000;
+    state.refreshTimer=setInterval(()=>{
+      if(document.visibilityState==='hidden') return;
+      refreshBootstrap();
+    }, bootstrapMs);
+    state.notificationTimer=setInterval(()=>{
+      if(document.visibilityState==='hidden') return;
+      loadNotifications({silent:true});
+    }, notifyMs);
+  }
+  function restorePersistedInvoice(){
+    try{
+      const raw=sessionStorage.getItem('novera_active_invoice');
+      if(!raw) return;
+      const invoice=JSON.parse(raw);
+      const expiresAt=Number(invoice&&invoice.expires_at||0);
+      if(expiresAt && expiresAt < Math.floor(Date.now()/1000) - 3600){
+        sessionStorage.removeItem('novera_active_invoice');
+        return;
+      }
+      state.activeInvoice=invoice;
+      renderInvoice(invoice);
+    }catch(_){}
+  }
+
   async function boot(){
     applyTranslations();
     await loadTelegramSession();
     syncTelegramContext();
     await exchangeBotLogin();
-    try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);const view=qs.get('view');if(view==='admin'&&data.auth&&data.auth.is_admin)switchView('admin');else if(view&&document.getElementById(`view-${view}`))switchView(view);loadNotifications({silent:true});state.refreshTimer=setInterval(refreshBootstrap,30000);state.notificationTimer=setInterval(()=>loadNotifications({silent:true}),15000);}catch(e){
+    restorePersistedInvoice();
+    try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);const view=qs.get('view');if(view==='admin'&&data.auth&&data.auth.is_admin)switchView('admin');else if(view&&document.getElementById(`view-${view}`))switchView(view);loadNotifications({silent:true});startPollingTimers();}catch(e){
       // An expired stored token may be repaired by current signed initData.
       if(e&&e.status===401&&state.telegramSessionToken){
         await clearTelegramSession(); syncTelegramContext();
-        try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);loadNotifications({silent:true});state.refreshTimer=setInterval(refreshBootstrap,30000);state.notificationTimer=setInterval(()=>loadNotifications({silent:true}),15000);return;}catch(e2){e=e2;}
+        try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);loadNotifications({silent:true});startPollingTimers();return;}catch(e2){e=e2;}
       }
       await handleApiError(e);$('heroSubtitle').textContent=apiErrorText(e&&e.detail,e&&e.status)||tr('authFailed');
     }
@@ -2225,12 +2330,17 @@
   $('closeMiniApp').addEventListener('click',()=>{if(tg&&tg.close)tg.close();else location.reload();});
   if($('retryConnection')) $('retryConnection').addEventListener('click',async()=>{
     setOfflineBanner(false);
-    try{await refreshBootstrap();await loadNotifications({silent:true});toast(tr('online'),'success');}catch(e){handleApiError(e);}
+    const ok=await refreshBootstrap();
+    if(ok){await loadNotifications({silent:true});toast(tr('online'),'success');}
   });
   window.addEventListener('offline',()=>setOfflineBanner(true));
   window.addEventListener('online',()=>{setOfflineBanner(false);refreshBootstrap().catch(()=>{});});
   if(typeof navigator!=='undefined' && navigator.onLine===false) setOfflineBanner(true);
   $('saveWallet').addEventListener('click',saveWallet);$('createDeposit').addEventListener('click',createDeposit);$('copyReferral').addEventListener('click',()=>copyText($('referralLink').textContent));$('refreshTeam').addEventListener('click',loadTeam);$('withdrawReferral').addEventListener('click',withdrawReferral);
+  if($('walletInput')){
+    $('walletInput').addEventListener('input',()=>{state.walletDirty=true;});
+    $('walletInput').addEventListener('change',()=>{state.walletDirty=true;});
+  }
   $('profitCalcAmount').addEventListener('input',updateProfitCalculator);$('calculatorToDeposit').addEventListener('click',calculatorToDeposit);
   const openExternal=(url)=>{if(!url)return;if(tg&&tg.openTelegramLink&&url.startsWith('https://t.me/'))tg.openTelegramLink(url);else window.open(url,'_blank','noopener');};
   $('openSupport').addEventListener('click',()=>openExternal(state.data&&state.data.support_url));
@@ -2245,7 +2355,13 @@
 
   window.addEventListener('pageshow',refreshTelegramAccountContext);
   window.addEventListener('focus',refreshTelegramAccountContext);
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshTelegramAccountContext();});
+  document.addEventListener('visibilitychange',()=>{
+    startPollingTimers();
+    if(document.visibilityState==='visible'){
+      refreshTelegramAccountContext();
+      refreshBootstrap();
+    }
+  });
   if(tg&&tg.onEvent){try{tg.onEvent('activated',refreshTelegramAccountContext);}catch(_){}}
 
   boot();

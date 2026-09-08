@@ -166,6 +166,7 @@
           <div class="input-shell amount-shell"><input id="depositAmount" type="number" inputmode="decimal" min="10" step="0.01" placeholder="100"><span class="unit">USDT</span></div>
           <p id="depositRangeHint" class="field-hint"></p>
           <p id="depositWalletGate" class="field-hint deposit-gate hidden" data-i18n="setPayoutWalletBeforeDeposit">Сначала сохраните кошелёк для выплат выше — без него заявку создать нельзя.</p>
+          <p id="depositChainGate" class="field-hint deposit-gate hidden" data-i18n="depositsDisabledUi">Пополнение временно недоступно</p>
           <button id="createDeposit" class="primary-btn" type="button" data-i18n="createInvoice">Создать заявку</button>
           <div id="invoiceBox" class="invoice-box hidden"></div>
         </article>
@@ -361,6 +362,6 @@
   </div>
 
   <div id="toast" class="toast" aria-live="polite"></div>
-  <script src="/assets/app.js?v=novera-brand-clean-2"></script>
+  <script src="/assets/app.js?v=novera-perf-ui-1"></script>
 </body>
 </html>

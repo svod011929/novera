@@ -143,3 +143,33 @@ async def test_removed_wss_log_is_dropped_before_confirmation() -> None:
 
     await service.handle_removed_live_transfer("0xdef", 3)
     assert service._pending_live == {}
+
+
+def test_http_poll_interval_is_slow_when_wss_healthy_and_fast_when_degraded() -> None:
+    settings = SimpleNamespace(
+        token_contract="0x1",
+        chain_id=56,
+        scan_start_block=0,
+        scan_block_chunk=1500,
+        confirmation_blocks=12,
+        deposit_scan_interval_seconds=15,
+        deposit_scan_healthy_min_seconds=60,
+        deposit_scan_degraded_seconds=4,
+        safety_wss_stale_seconds=180,
+    )
+    service = DepositMonitor(
+        repository=SimpleNamespace(),
+        settings=settings,
+        chain=SimpleNamespace(),
+    )
+
+    # No WSS yet → fast HTTP recovery.
+    assert service._http_poll_interval() == 4.0
+
+    service.mark_wss_connected(True)
+    service._wss_last_event_at = __import__("time").time()
+    assert service._http_poll_interval() == 60.0
+
+    # Stale WSS → fall back to fast scan.
+    service._wss_last_event_at = __import__("time").time() - 120
+    assert service._http_poll_interval() == 4.0

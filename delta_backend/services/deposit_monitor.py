@@ -42,6 +42,37 @@ class DepositMonitor:
         self._pending_live: dict[tuple[str, int], TransferEvent] = {}
         self._latest_ws_head = -1
         self._live_head_event = asyncio.Event()
+        self._wss_connected = False
+        self._wss_last_event_at = 0.0
+
+    def mark_wss_connected(self, connected: bool) -> None:
+        self._wss_connected = connected
+        if connected:
+            self._wss_last_event_at = time.time()
+        if self.telemetry is not None:
+            setattr(self.telemetry, "wss_connected", bool(connected))
+
+    def _http_poll_interval(self) -> float:
+        """HTTP is a safety net when WSS is healthy; a fast path when it is not."""
+        configured = max(1, int(self.settings.deposit_scan_interval_seconds))
+        healthy_min = max(
+            configured,
+            int(getattr(self.settings, "deposit_scan_healthy_min_seconds", 60)),
+        )
+        degraded = max(
+            2,
+            int(getattr(self.settings, "deposit_scan_degraded_seconds", 4)),
+        )
+        stale_after = max(
+            30,
+            int(getattr(self.settings, "safety_wss_stale_seconds", 180)) // 2,
+        )
+        wss_fresh = (
+            self._wss_connected
+            and self._wss_last_event_at > 0
+            and (time.time() - self._wss_last_event_at) < stale_after
+        )
+        return float(healthy_min if wss_fresh else min(configured, degraded))
 
     async def _initial_height(self, safe_head: int) -> int:
         stored = await self.repository.get_sync_height(self.sync_key)
@@ -146,9 +177,12 @@ class DepositMonitor:
     async def handle_live_head(self, block_number: int) -> None:
         if block_number > self._latest_ws_head:
             self._latest_ws_head = block_number
+        self._wss_last_event_at = time.time()
+        self._wss_connected = True
         if self.telemetry is not None:
             setattr(self.telemetry, "wss_last_head", int(block_number))
             setattr(self.telemetry, "wss_last_head_at", time.time())
+            setattr(self.telemetry, "wss_connected", True)
         self._live_head_event.set()
 
     async def handle_removed_live_transfer(self, tx_hash: str, log_index: int) -> None:
@@ -219,13 +253,19 @@ class DepositMonitor:
             self._live_confirmation_worker(stop_event),
             name="deposit-live-confirmations",
         )
+
+        async def on_subscribed() -> None:
+            self.mark_wss_connected(True)
+            await self.backfill_to_current()
+
         try:
             async for transfer in self.chain.stream_incoming_transfers(
                 stop_event,
-                on_subscribed=self.backfill_to_current,
+                on_subscribed=on_subscribed,
                 on_head=self.handle_live_head,
                 on_removed=self.handle_removed_live_transfer,
             ):
+                self._wss_last_event_at = time.time()
                 try:
                     await self.handle_live_transfer(transfer)
                 except asyncio.CancelledError:
@@ -236,11 +276,12 @@ class DepositMonitor:
                         self.chain.safe_error(exc),
                     )
         finally:
+            self.mark_wss_connected(False)
             confirmation_task.cancel()
             await asyncio.gather(confirmation_task, return_exceptions=True)
 
     async def run_polling(self, stop_event: asyncio.Event) -> None:
-        """Slow safety backfill. Realtime crediting is handled by Alchemy WSS."""
+        """HTTP safety net: slow while WSS is healthy, fast while it is not."""
         while not stop_event.is_set():
             try:
                 await self.scan_confirmed()
@@ -248,10 +289,8 @@ class DepositMonitor:
                 raise
             except Exception as exc:
                 logger.warning("Deposit safety backfill failed: %s", self.chain.safe_error(exc))
+            interval = self._http_poll_interval()
             try:
-                await asyncio.wait_for(
-                    stop_event.wait(),
-                    timeout=max(60, int(self.settings.deposit_scan_interval_seconds)),
-                )
+                await asyncio.wait_for(stop_event.wait(), timeout=interval)
             except TimeoutError:
                 pass

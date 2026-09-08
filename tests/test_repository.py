@@ -265,6 +265,15 @@ async def test_connect_rebrands_durable_notifications(tmp_path) -> None:
         item = notifications["items"][0]
         assert item["title"] == "NOVERA"
         assert item["body"] == "Открыть NOVERA"
-        assert retired not in item["telegram_html"]
+        # API payload intentionally omits telegram_html; verify durable storage.
+        async with repository._lock:
+            cursor = await repository._connection().execute(
+                "SELECT telegram_html FROM user_notifications WHERE id = ?",
+                (int(item["id"]),),
+            )
+            stored = await cursor.fetchone()
+        assert stored is not None
+        assert retired not in str(stored["telegram_html"])
+        assert "NOVERA" in str(stored["telegram_html"])
     finally:
         await repository.close()

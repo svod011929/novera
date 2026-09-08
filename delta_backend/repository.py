@@ -1655,7 +1655,13 @@ class DeltaRepository:
         return scheduled
 
     async def get_next_payout(self) -> dict[str, object] | None:
+        rows = await self.list_open_payouts(limit=1)
+        return rows[0] if rows else None
+
+    async def list_open_payouts(self, *, limit: int = 50) -> list[dict[str, object]]:
+        """Return in-flight payouts: broadcast/signed first, then queued."""
         connection = self._connection()
+        capped = max(1, min(int(limit), 200))
         async with self._lock:
             cursor = await connection.execute(
                 """
@@ -1666,11 +1672,12 @@ class DeltaRepository:
                     WHEN 'signed' THEN 1
                     ELSE 2
                 END, id
-                LIMIT 1
-                """
+                LIMIT ?
+                """,
+                (capped,),
             )
-            row = await cursor.fetchone()
-        return dict(row) if row else None
+            rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
     async def mark_payout_signed(
         self,

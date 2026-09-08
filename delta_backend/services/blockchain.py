@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar
 from urllib.parse import parse_qsl, urlsplit
+import time
 
 from eth_account import Account
 from hexbytes import HexBytes
@@ -384,7 +385,15 @@ class EvmTokenClient:
         return await self._call_http("eth_blockNumber", lambda w3: w3.eth.block_number)
 
     async def gas_price(self) -> int:
-        return int(await self._call_http("eth_gasPrice", lambda w3: w3.eth.gas_price))
+        cached = getattr(self, "_gas_price_cache", None)
+        cached_at = float(getattr(self, "_gas_price_cache_at", 0.0) or 0.0)
+        now = time.time()
+        if cached is not None and (now - cached_at) < 3.0:
+            return int(cached)
+        value = int(await self._call_http("eth_gasPrice", lambda w3: w3.eth.gas_price))
+        self._gas_price_cache = value
+        self._gas_price_cache_at = now
+        return value
 
     async def native_balance(self, address: str) -> int:
         checksum = Web3.to_checksum_address(address)
@@ -549,25 +558,32 @@ class EvmTokenClient:
     def adaptive_log_chunk(self) -> int:
         return self._adaptive_log_chunk
 
-    async def sign_token_transfer(self, address: str, amount_minor: int) -> SignedTransfer:
+    async def sign_token_transfer(
+        self,
+        address: str,
+        amount_minor: int,
+        *,
+        gas_price: int | None = None,
+    ) -> SignedTransfer:
         if self.account is None:
             raise BlockchainConfigurationError("payout signing key is missing")
         destination = Web3.to_checksum_address(address)
         value_atomic = minor_to_atomic(amount_minor, self.settings.token_decimals)
+        fixed_gas_price = int(gas_price) if gas_price is not None else None
 
         async def build(w3: AsyncWeb3) -> SignedTransfer:
             contract = self._contract(w3)
             nonce = await w3.eth.get_transaction_count(self.account.address, "pending")
             function = contract.functions.transfer(destination, value_atomic)
             gas_estimate = await function.estimate_gas({"from": self.account.address})
-            gas_price = await w3.eth.gas_price
+            price = fixed_gas_price if fixed_gas_price is not None else int(await w3.eth.gas_price)
             transaction = await function.build_transaction(
                 {
                     "from": self.account.address,
                     "chainId": self.settings.chain_id,
                     "nonce": nonce,
                     "gas": gas_estimate * 120 // 100,
-                    "gasPrice": gas_price,
+                    "gasPrice": price,
                 }
             )
             signed = self.account.sign_transaction(transaction)
