@@ -277,3 +277,54 @@ async def test_connect_rebrands_durable_notifications(tmp_path) -> None:
         assert "NOVERA" in str(stored["telegram_html"])
     finally:
         await repository.close()
+
+
+async def test_admin_user_detail_includes_partner_turnovers(tmp_path) -> None:
+    business = MiniAppSettings(_env_file=None)
+    repository = DeltaRepository(tmp_path / "delta.sqlite3", business)
+    await repository.connect()
+    try:
+        # Tree: leader(10)
+        #   ├─ alice(11) personal 100; her L1 bob(12) deposits 40 → alice structure 40
+        #   └─ carol(13) personal 25; no downline → structure 0
+        await repository.ensure_user(10, "leader", "Leader", "ru")
+        await repository.set_wallet(10, WALLET_ONE)
+        await repository.ensure_user(11, "alice", "Alice", "ru", referrer_id=10)
+        await repository.set_wallet(11, WALLET_TWO)
+        await repository.ensure_user(12, "bob", "Bob", "ru", referrer_id=11)
+        await repository.set_wallet(12, "0x0000000000000000000000000000000000000003")
+        await repository.ensure_user(13, "carol", "Carol", "ru", referrer_id=10)
+        await repository.set_wallet(13, "0x0000000000000000000000000000000000000004")
+
+        await pay_invoice(repository, 11, "100", 11)
+        await pay_invoice(repository, 12, "40", 12)
+        await pay_invoice(repository, 13, "25", 13)
+
+        detail = await repository.admin_user_detail(10)
+        assert "partner_stats" in detail
+        stats = detail["partner_stats"]
+        assert int(stats["team_count"]) >= 2
+        assert "earned_minor" in stats
+        assert "available_minor" in stats
+        assert "line_minor" in stats
+        assert "current_level" in stats
+
+        partners = {int(p["telegram_id"]): p for p in detail["partners"]}
+        assert set(partners) == {11, 13}
+
+        alice = partners[11]
+        assert int(alice["personal_turnover_minor"]) == usdt_to_minor("100")
+        assert int(alice["structure_turnover_minor"]) == usdt_to_minor("40")
+        assert int(alice["structure_member_count"]) == 1
+        # Partner's own deposit must not inflate structure turnover
+        assert int(alice["structure_turnover_minor"]) != int(alice["personal_turnover_minor"])
+
+        carol = partners[13]
+        assert int(carol["personal_turnover_minor"]) == usdt_to_minor("25")
+        assert int(carol["structure_turnover_minor"]) == 0
+        assert int(carol["structure_member_count"]) == 0
+
+        ordered_ids = [int(p["telegram_id"]) for p in detail["partners"]]
+        assert ordered_ids[0] == 11  # higher structure turnover first
+    finally:
+        await repository.close()
