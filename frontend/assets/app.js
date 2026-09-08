@@ -497,7 +497,8 @@
       confirmSetReferralLevel:'Изменить доступ к уровням партнёрки?',
       confirmClearWallet:'Очистить кошелёк выплат пользователя?',
       confirmBlockUser:'Заблокировать этого пользователя?',
-      confirmUnblockUser:'Разблокировать этого пользователя?'
+      confirmUnblockUser:'Разблокировать этого пользователя?',
+      partnerStatsTitle:'Партнёрская сводка',personalTurnover:'Личный оборот',structureTurnover:'Оборот структуры',structureMembers:'В структуре'
     },
     en:{
       userTabOverview:'Overview',userTabInvestments:'Investments',userTabPayouts:'Payouts',userTabReferral:'Referral',userTabAccess:'Access',userTabAudit:'Audit',
@@ -508,7 +509,8 @@
       confirmSetReferralLevel:'Change partner level access?',
       confirmClearWallet:'Clear this user payout wallet?',
       confirmBlockUser:'Block this user?',
-      confirmUnblockUser:'Unblock this user?'
+      confirmUnblockUser:'Unblock this user?',
+      partnerStatsTitle:'Partner summary',personalTurnover:'Personal turnover',structureTurnover:'Structure turnover',structureMembers:'In structure'
     },
     uk:{
       userTabOverview:'Огляд',userTabInvestments:'Інвестиції',userTabPayouts:'Виплати',userTabReferral:'Партнерка',userTabAccess:'Доступ',userTabAudit:'Журнал',
@@ -519,7 +521,8 @@
       confirmSetReferralLevel:'Змінити доступ до рівнів партнерки?',
       confirmClearWallet:'Очистити гаманець виплат користувача?',
       confirmBlockUser:'Заблокувати цього користувача?',
-      confirmUnblockUser:'Розблокувати цього користувача?'
+      confirmUnblockUser:'Розблокувати цього користувача?',
+      partnerStatsTitle:'Партнерська зведення',personalTurnover:'Особистий оборот',structureTurnover:'Оборот структури',structureMembers:'У структурі'
     }
   };
   Object.entries(ADMIN_USER_CARD_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
@@ -1725,7 +1728,32 @@
     const payoutRows=payouts.length?payouts.slice(0,40).map((p)=>`<article class="list-card compact-card"><div class="list-card-header"><div><strong class="money">${money(p.amount_minor)} USDT</strong><small>#${esc(p.id)} · ${esc(p.subtype==='principal'?tr('principalReturn'):(p.kind==='referral'?tr('referral'):tr('daily')))} · ${esc(fmtDate(p.created_at))}</small></div><span class="tag ${esc(p.status)}">${esc(statusText(p.status))}</span></div>${p.address?`<small class="admin-payout-address">${esc(tr('payoutAddressLabel'))}: ${esc(compactAddress(p.address))}</small>`:''}${p.last_error?`<small class="error-line">${esc(p.last_error)}</small>`:''}</article>`).join(''):`<div class="empty-state compact">${esc(tr('noUserPayouts'))}</div>`;
     const openCounts=openPayoutCounts(payouts);
     const walletOpenStrip=`<div class="wallet-open-strip" aria-label="${esc(tr('walletOpenStripTitle'))}"><div><span>${esc(tr('queued'))}</span><strong>${esc(openCounts.queued)}</strong></div><div><span>${esc(tr('signed'))}</span><strong>${esc(openCounts.signed)}</strong></div><div><span>${esc(tr('broadcast'))}</span><strong>${esc(openCounts.broadcast)}</strong></div></div>`;
-    const partnerRows=partners.length?partners.slice(0,30).map((p)=>`<article class="list-card compact-card"><div class="list-card-header"><div><strong>${esc(p.first_name||p.username||p.telegram_id)}</strong><small>${p.username?'@'+esc(p.username)+' · ':''}ID ${esc(p.telegram_id)}</small></div><span class="date-text">${esc(fmtDate(p.created_at))}</span></div></article>`).join(''):`<div class="empty-state compact">${esc(tr('noUserPartners'))}</div>`;
+    const ps=d.partner_stats||{};
+    const partnerSummary=`
+      <div class="modal-section">
+        <h4>${esc(tr('partnerStatsTitle'))}</h4>
+        <div class="detail-row"><span>${esc(tr('referralIncome'))}</span><strong class="money">${money(ps.earned_minor)} USDT</strong></div>
+        <div class="detail-row"><span>${esc(tr('todayEarned'))}</span><strong class="money">+${money(ps.today_minor)} USDT</strong></div>
+        <div class="detail-row"><span>${esc(tr('availableToWithdraw'))}</span><strong class="money">${money(ps.available_minor)} USDT</strong></div>
+        <div class="detail-row"><span>${esc(tr('yourInvestments'))}</span><strong class="money">${money(ps.personal_minor)} USDT</strong></div>
+        <div class="detail-row"><span>${esc(tr('lineTurnover'))}</span><strong class="money">${money(ps.line_minor)} USDT</strong></div>
+        <div class="detail-row"><span>${esc(tr('inTeam'))}</span><strong>${esc(ps.team_count||0)}</strong></div>
+        <div class="detail-row"><span>${esc(tr('levelsUnlocked'))}</span><strong>${esc(ps.current_level||0)}/${esc(ps.levels_total||5)}</strong></div>
+      </div>`;
+    const partnerRows=partners.length?partners.slice(0,100).map((p)=>`
+      <article class="list-card compact-card">
+        <button class="admin-user-btn touch-target" type="button" data-partner-id="${esc(p.telegram_id)}">
+          <div class="list-card-header">
+            <div>
+              <strong>${esc(p.first_name||p.username||p.telegram_id)}</strong>
+              <small>${p.username?'@'+esc(p.username)+' · ':''}ID ${esc(p.telegram_id)} · ${esc(fmtDate(p.created_at))}</small>
+            </div>
+          </div>
+          <div class="detail-row"><span>${esc(tr('personalTurnover'))}</span><strong class="money">${money(p.personal_turnover_minor)} USDT</strong></div>
+          <div class="detail-row"><span>${esc(tr('structureTurnover'))}</span><strong class="money">${money(p.structure_turnover_minor)} USDT</strong></div>
+          <div class="detail-row"><span>${esc(tr('structureMembers'))}</span><strong>${esc(p.structure_member_count||0)}</strong></div>
+        </button>
+      </article>`).join(''):`<div class="empty-state compact">${esc(tr('noUserPartners'))}</div>`;
     const tabs=[
       ['overview',tr('userTabOverview')],
       ['investments',tr('userTabInvestments')],
@@ -1752,6 +1780,7 @@
     const payoutsBody=`<div class="modal-section"><div class="stack-list compact-list">${payoutRows}</div></div>`;
 
     const referralBody=`
+      ${partnerSummary}
       <div class="modal-section user-control-section"><h4>${esc(tr('referralBalanceControl'))}</h4><div class="big-balance">${money(d.referral_balance_minor)} <small>USDT</small></div><p class="field-hint">${esc(tr('referralBalanceNote'))}</p><label class="input-label" for="adminReferralBalanceInput">${esc(tr('referralBalanceControl'))}, USDT</label><input id="adminReferralBalanceInput" class="text-input" type="number" min="0" step="0.000001" inputmode="decimal" value="${esc((Number(d.referral_balance_minor||0)/1000000).toFixed(6))}"><label class="input-label" for="adminReferralBalanceReason">${esc(tr('adminReason'))}</label><textarea id="adminReferralBalanceReason" class="textarea-input compact-textarea" maxlength="500" rows="2" placeholder="${esc(tr('adminReasonHint'))}"></textarea><button id="saveAdminReferralBalance" class="primary-btn compact-primary" type="button">${esc(tr('setBalance'))}</button></div>
       <div class="modal-section user-control-section"><h4>${esc(tr('partnerLevelAccess'))}</h4><p class="field-hint">${esc(tr('partnerLevelNote'))}</p><select id="adminReferralLevel" class="text-input"><option value="0" ${manualLevel===0?'selected':''}>${esc(tr('automaticQualification'))}</option>${[1,2,3,4,5].map((level)=>`<option value="${level}" ${manualLevel===level?'selected':''}>${esc(tr('level'))} ${level}</option>`).join('')}</select><label class="input-label" for="adminReferralLevelReason">${esc(tr('adminReason'))}</label><textarea id="adminReferralLevelReason" class="textarea-input compact-textarea" maxlength="500" rows="2" placeholder="${esc(tr('adminReasonHint'))}"></textarea><button id="saveAdminReferralLevel" class="primary-btn compact-primary" type="button">${esc(tr('save'))}</button></div>
       <div class="modal-section"><h4>${esc(tr('members'))}</h4><div class="stack-list compact-list">${partnerRows}</div></div>`;
@@ -1783,6 +1812,12 @@
       $('adminUserDetail').querySelectorAll('.user-modal-tab').forEach((el)=>el.classList.toggle('active',el.dataset.userTab===state.adminUserTab));
       $('adminUserDetail').querySelectorAll('.user-modal-panel').forEach((el)=>el.classList.toggle('active',el.dataset.userPanel===state.adminUserTab));
     }));
+    $('adminUserDetail').querySelectorAll('[data-partner-id]').forEach((btn)=>{
+      btn.addEventListener('click',()=>{
+        state.adminUserTab='referral';
+        openAdminUser(btn.dataset.partnerId);
+      });
+    });
 
     const bindBlock=(el)=>{ if(el) el.addEventListener('click',()=>toggleAdminUserBlock(u.telegram_id,!Boolean(u.blocked))); };
     bindBlock($('toggleUserBlock'));
