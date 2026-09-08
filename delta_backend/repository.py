@@ -2579,6 +2579,7 @@ class DeltaRepository:
                     SELECT user_id, COALESCE(SUM(principal_minor), 0) AS personal_turnover_minor,
                            COUNT(id) AS deposit_count
                     FROM deposits
+                    WHERE user_id IN (SELECT telegram_id FROM tree)
                     GROUP BY user_id
                 ),
                 structure AS (
