@@ -128,6 +128,8 @@ async def test_admin_referral_balance_and_level_api_are_audited(tmp_path) -> Non
             detail = await client.get(f"/api/admin/users/{USER_ID}", headers=headers)
             assert detail.status_code == 200
             payload = detail.json()
+            assert "partner_stats" in payload
+            assert "partners" in payload
             assert payload["referral_balance_adjustments"]
             assert payload["referral_balance_adjustments"][0]["reason"] == "Campaign top-up"
             assert payload["referral_level_adjustments"]
