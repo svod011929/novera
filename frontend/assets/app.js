@@ -1613,6 +1613,7 @@
   function stopInvoiceTimer(){
     if(state.invoiceTimer){clearInterval(state.invoiceTimer);state.invoiceTimer=null;}
   }
+  const INVOICE_RECOVERY_LOOKAHEAD_SECONDS=7200;
   function stopInvoicePoll(){
     if(state.invoicePollTimer){clearInterval(state.invoicePollTimer);state.invoicePollTimer=null;}
     state.invoicePollInFlight=false;
@@ -1655,8 +1656,9 @@
   }
   function invoicePollTerminal(invoice){
     const phase=invoiceUiPhase(invoice);
-    if(phase==='credited' || phase==='expired') return true;
-    return phase==='amount_mismatch' && invoiceIsTimeExpired(invoice);
+    if(phase==='credited') return true;
+    const expiresAt=Number(invoice&&invoice.expires_at||0);
+    return expiresAt>0 && expiresAt+INVOICE_RECOVERY_LOOKAHEAD_SECONDS<=Math.floor(Date.now()/1000);
   }
   function updateInvoiceStatusUi(invoice){
     const box=$('invoiceBox'); if(!box||!invoice) return;
@@ -1702,7 +1704,7 @@
     if(!invoiceId) return;
     if(document.visibilityState==='hidden' && !manual) return;
     if(state.invoicePollInFlight) return;
-    if(invoicePollTerminal(invoice)){
+    if(!manual && invoicePollTerminal(invoice)){
       stopInvoicePoll();
       updateInvoiceStatusUi(invoice);
       return;
@@ -1762,13 +1764,12 @@
             : `${secondsLeft} ${tr('invoiceSeconds')}`);
       const ttlStrong=box.querySelector('[data-invoice-ttl]');
       if(ttlStrong) ttlStrong.textContent=countdownLabel;
-      if(expired && !invoice.credited){
-        invoice.status='expired';
-        updateInvoiceStatusUi(invoice);
+      const currentInvoice=state.activeInvoice||invoice;
+      if(expired && !currentInvoice.credited) currentInvoice.status='expired';
+      updateInvoiceStatusUi(currentInvoice);
+      if(invoicePollTerminal(currentInvoice)){
         stopInvoiceTimer();
         stopInvoicePoll();
-      } else {
-        updateInvoiceStatusUi(invoice);
       }
     };
     const reusedNote=invoice.reused?`<div class="invoice-reused">${esc(tr('invoiceReused'))}</div>`:'';
@@ -2780,17 +2781,33 @@
         :'';
       return `<article class="list-card"><div class="list-card-header"><div><strong>${esc(amountText)} USDT</strong><small>#${esc(d.id)} · ${esc(fmtDate(d.created_at))}</small></div><button class="admin-action touch-target" type="button" data-match-chain-deposit="${esc(d.id)}">${esc(tr('matchUnmatched'))}</button></div>${txLine}</article>`;
     }).join(''):`<div class="empty-state">${esc(tr('noUnmatchedDeposits'))}</div>`;
-    $('adminUnmatchedList').querySelectorAll('[data-match-chain-deposit]').forEach((b)=>b.addEventListener('click',()=>matchAdminChainDeposit(b.dataset.matchChainDeposit)));
+    $('adminUnmatchedList').querySelectorAll('[data-match-chain-deposit]').forEach((b)=>{
+      const deposit=rows.find((row)=>String(row.id)===String(b.dataset.matchChainDeposit));
+      if(deposit) b.addEventListener('click',()=>matchAdminChainDeposit(deposit));
+    });
   }
-  async function matchAdminChainDeposit(id){
+  async function matchAdminChainDeposit(deposit){
+    const id=deposit.id;
     const invoiceRaw=window.prompt(tr('matchInvoicePrompt'),'');
     if(invoiceRaw===null) return;
-    const invoice_id=Number.parseInt(String(invoiceRaw).trim(),10);
-    if(!Number.isInteger(invoice_id)||invoice_id<=0){toast(tr('invalidData'),'error');return;}
+    const raw=String(invoiceRaw).trim();
+    if(!/^\d+$/.test(raw)){toast(tr('invalidData'),'error');return;}
+    const invoice_id=Number(raw);
+    if(!Number.isSafeInteger(invoice_id)||invoice_id<=0){toast(tr('invalidData'),'error');return;}
     const reason=window.prompt(tr('matchReasonPrompt'),'');
     if(reason===null) return;
     const cleanReason=String(reason).trim();
     if(!cleanReason){toast(tr('invalidData'),'error');return;}
+    const amountText=deposit.amount!=null?String(deposit.amount):money(deposit.amount_minor);
+    const tx=String(deposit.tx_hash||'—');
+    const confirmation=[
+      `${tr('matchUnmatched')}?`,
+      `${tr('amount')}: ${amountText} USDT`,
+      `TX: ${tx}`,
+      `${tr('matchInvoicePrompt')}: ${invoice_id}`,
+      `${tr('matchReasonPrompt')}: ${cleanReason}`
+    ].join('\n');
+    if(!window.confirm(confirmation)) return;
     try{
       await api(`/api/admin/chain-deposits/${encodeURIComponent(id)}/match`,{
         method:'POST',
@@ -2824,7 +2841,7 @@
       if(!raw) return;
       const invoice=JSON.parse(raw);
       const expiresAt=Number(invoice&&invoice.expires_at||0);
-      if(expiresAt && expiresAt < Math.floor(Date.now()/1000) - 3600){
+      if(expiresAt && expiresAt+INVOICE_RECOVERY_LOOKAHEAD_SECONDS<=Math.floor(Date.now()/1000)){
         sessionStorage.removeItem('novera_active_invoice');
         return;
       }

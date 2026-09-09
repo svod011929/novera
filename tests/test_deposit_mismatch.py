@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from delta_backend.amounts import usdt_to_minor
 from delta_backend.api_settings import MiniAppSettings
 from delta_backend.deposit_mismatch import select_mismatch_candidate
@@ -17,18 +19,40 @@ def test_select_by_base_minor():
     assert select_mismatch_candidate(invoice, candidates)["id"] == 1
 
 
-def test_select_within_one_usdt_of_exact():
+@pytest.mark.parametrize("direction", [-1, 1])
+def test_select_within_half_usdt_of_exact(direction):
     invoice = {"created_at": 1000, "expires_at": 2000, "base_minor": 100_000000, "exact_minor": 100_370000}
     candidates = [
-        {"id": 2, "amount_minor": 100_370000 - 50, "created_at": 1010, "tx_hash": "0xb", "matched": 0},
+        {
+            "id": 2,
+            "amount_minor": 100_370000 + direction * usdt_to_minor("0.50"),
+            "created_at": 1010,
+            "tx_hash": "0xb",
+            "matched": 0,
+        },
     ]
     assert select_mismatch_candidate(invoice, candidates)["id"] == 2
 
 
+@pytest.mark.parametrize("direction", [-1, 1])
+def test_reject_more_than_one_usdt_from_exact(direction):
+    invoice = {"created_at": 1000, "expires_at": 2000, "base_minor": 100_000000, "exact_minor": 100_370000}
+    candidates = [
+        {
+            "id": 3,
+            "amount_minor": 100_370000 + direction * usdt_to_minor("1.01"),
+            "created_at": 1010,
+            "tx_hash": "0xc",
+            "matched": 0,
+        },
+    ]
+    assert select_mismatch_candidate(invoice, candidates) is None
+
+
 def test_reject_outside_window_and_tolerance():
     invoice = {"created_at": 1000, "expires_at": 2000, "base_minor": 100_000000, "exact_minor": 100_370000}
-    far = {"id": 3, "amount_minor": 50_000000, "created_at": 1010, "tx_hash": "0xc", "matched": 0}
-    early = {"id": 4, "amount_minor": 100_000000, "created_at": 100, "tx_hash": "0xd", "matched": 0}
+    far = {"id": 4, "amount_minor": 50_000000, "created_at": 1010, "tx_hash": "0xd", "matched": 0}
+    early = {"id": 5, "amount_minor": 100_000000, "created_at": 100, "tx_hash": "0xe", "matched": 0}
     assert select_mismatch_candidate(invoice, [far, early]) is None
 
 

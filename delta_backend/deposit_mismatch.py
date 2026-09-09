@@ -1,8 +1,10 @@
 """Near-miss heuristics for unmatched treasury transfers vs an invoice."""
 
+from delta_backend.amounts import MINOR_FACTOR
+
 MISMATCH_LOOKBACK_SECONDS = 300
 MISMATCH_LOOKAHEAD_AFTER_EXPIRY_SECONDS = 7200
-MISMATCH_AMOUNT_TOLERANCE_MINOR = 100  # 1.00 USDT
+MISMATCH_AMOUNT_TOLERANCE_MINOR = 1 * MINOR_FACTOR  # 1.00 USDT in minor units
 
 
 def _in_time_window(invoice: dict, created_at: int) -> bool:
