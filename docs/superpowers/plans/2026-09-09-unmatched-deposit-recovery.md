@@ -42,7 +42,7 @@
 - Create: `tests/test_deposit_mismatch.py`
 
 **Interfaces:**
-- Produces: `MISMATCH_LOOKBACK_SECONDS = 300`, `MISMATCH_LOOKAHEAD_AFTER_EXPIRY_SECONDS = 7200`, `MISMATCH_AMOUNT_TOLERANCE_MINOR = 100`
+- Produces: `MISMATCH_LOOKBACK_SECONDS = 300`, `MISMATCH_LOOKAHEAD_AFTER_EXPIRY_SECONDS = 7200`, `MISMATCH_AMOUNT_TOLERANCE_MINOR = 1 * MINOR_FACTOR` (1.00 USDT)
 - Produces: `select_mismatch_candidate(invoice: dict, candidates: list[dict]) -> dict | None`
   - `invoice` keys: `created_at`, `expires_at`, `base_minor`, `exact_minor` (ints)
   - candidate keys: `id`, `amount_minor`, `created_at`, `tx_hash`, `matched` (0/1)

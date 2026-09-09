@@ -74,7 +74,7 @@
 и сумма:
 
 - `amount_minor == invoice.base_minor`, **или**
-- `|amount_minor − invoice.exact_minor| ≤ 100` (≤ 1.00 USDT).
+- `|amount_minor − invoice.exact_minor| ≤ 1 USDT in minor units` (`1 * MINOR_FACTOR`, обычно `1_000_000`).
 
 Если несколько кандидатов — брать **ближайший по времени** к `invoice.created_at` (затем меньший `|Δ|` к exact).
 
