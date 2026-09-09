@@ -12,6 +12,11 @@ import aiosqlite
 
 from .amounts import MINOR_FACTOR, bps_to_percent_text, calculate_bps, minor_to_text
 from .api_settings import MiniAppSettings
+from .deposit_mismatch import (
+    MISMATCH_LOOKAHEAD_AFTER_EXPIRY_SECONDS,
+    MISMATCH_LOOKBACK_SECONDS,
+    select_mismatch_candidate,
+)
 from .models import TransferEvent
 from .telegram_auth import TelegramUser
 # NOVERA admin inviter management
@@ -2171,6 +2176,37 @@ class DeltaRepository:
                 }
         raise RepositoryError("Could not reserve a unique deposit amount")
 
+    async def _invoice_mismatch_hint(
+        self,
+        connection: aiosqlite.Connection,
+        *,
+        created_at: int,
+        expires_at: int,
+        base_minor: int,
+        exact_minor: int,
+    ) -> dict | None:
+        start = int(created_at) - MISMATCH_LOOKBACK_SECONDS
+        end = int(expires_at) + MISMATCH_LOOKAHEAD_AFTER_EXPIRY_SECONDS
+        cursor = await connection.execute(
+            """
+            SELECT id, amount_minor, created_at, tx_hash, matched
+            FROM chain_deposits
+            WHERE matched = 0
+              AND created_at BETWEEN ? AND ?
+            """,
+            (start, end),
+        )
+        candidates = [dict(row) for row in await cursor.fetchall()]
+        return select_mismatch_candidate(
+            {
+                "created_at": int(created_at),
+                "expires_at": int(expires_at),
+                "base_minor": int(base_minor),
+                "exact_minor": int(exact_minor),
+            },
+            candidates,
+        )
+
     async def get_user_invoice(
         self, user_id: int, invoice_id: int
     ) -> dict[str, object] | None:
@@ -2180,7 +2216,8 @@ class DeltaRepository:
             cursor = await connection.execute(
                 """
                 SELECT invoice.id, invoice.status, invoice.expires_at,
-                       invoice.exact_minor, invoice.base_minor, invoice.promo_code_id,
+                       invoice.created_at, invoice.exact_minor, invoice.base_minor,
+                       invoice.promo_code_id,
                        promo.bonus_type, promo.bonus_bps, promo.bonus_fixed_minor,
                        deposit.id AS deposit_id
                 FROM deposit_invoices invoice
@@ -2213,18 +2250,40 @@ class DeltaRepository:
                 except RepositoryError:
                     bonus_minor = 0
             base_minor = int(row["base_minor"])
+            exact_minor = int(row["exact_minor"])
             credited = status == "paid" or deposit_id is not None
+            mismatch_row = None
+            if not credited:
+                mismatch_row = await self._invoice_mismatch_hint(
+                    connection,
+                    created_at=int(row["created_at"]),
+                    expires_at=expires_at,
+                    base_minor=base_minor,
+                    exact_minor=exact_minor,
+                )
+            mismatch: dict[str, object] | None = None
+            if mismatch_row is not None:
+                mismatch = {
+                    "observed_amount": minor_to_text(
+                        int(mismatch_row["amount_minor"]), trim=False
+                    ),
+                    "expected_amount": minor_to_text(exact_minor, trim=False),
+                    "tx_hash": str(mismatch_row["tx_hash"]),
+                    "created_at": int(mismatch_row["created_at"]),
+                }
             return {
                 "id": int(row["id"]),
                 "status": status,
                 "expires_at": expires_at,
-                "exact_amount": minor_to_text(int(row["exact_minor"]), trim=False),
+                "exact_amount": minor_to_text(exact_minor, trim=False),
                 "bonus_usdt": minor_to_text(bonus_minor, trim=False),
                 "effective_principal_usdt": minor_to_text(
                     base_minor + bonus_minor, trim=False
                 ),
                 "deposit_id": deposit_id,
                 "credited": credited,
+                "mismatch_hint": mismatch is not None,
+                "mismatch": mismatch,
             }
 
     async def expire_invoices(self) -> int:
