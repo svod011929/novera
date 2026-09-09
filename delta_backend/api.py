@@ -41,7 +41,12 @@ from .amounts import (
 from .api_settings import MiniAppSettings
 from .config import Settings
 from .launcher import run_launcher
-from .repository import DeltaRepository, RepositoryError
+from .repository import (
+    CAMPAIGN_MAX_INTERVAL_HOURS,
+    CAMPAIGN_MESSAGE_MAX_LENGTH,
+    DeltaRepository,
+    RepositoryError,
+)
 from .runtime_secrets import ChainSecretBundle, RuntimeSecretError, RuntimeSecretStore
 from .services.blockchain import EvmTokenClient
 from .services.broadcasts import BroadcastService
@@ -294,6 +299,32 @@ class BroadcastRequest(BaseModel):
     audience: Literal["all", "investors", "partners"] = "all"
     media_id: str | None = Field(default=None, max_length=64)
     buttons: list[BroadcastButtonRequest] = Field(default_factory=list, max_length=8)
+
+
+class CampaignCreateRequest(BaseModel):
+    kind: Literal["promo", "partner", "custom"]
+    audience: Literal["all", "investors", "partners"] = "all"
+    schedule_mode: Literal["interval", "weekly"]
+    interval_hours: int = Field(default=24, ge=1, le=CAMPAIGN_MAX_INTERVAL_HOURS)
+    weekdays: list[int] = Field(default_factory=list, max_length=7)
+    time_utc: str = Field(default="12:00", max_length=5)
+    message_html: str = Field(min_length=1, max_length=CAMPAIGN_MESSAGE_MAX_LENGTH)
+    promo_code_id: int | None = None
+    enabled: bool = True
+
+
+class CampaignUpdateRequest(BaseModel):
+    kind: Literal["promo", "partner", "custom"] | None = None
+    audience: Literal["all", "investors", "partners"] | None = None
+    schedule_mode: Literal["interval", "weekly"] | None = None
+    interval_hours: int | None = Field(default=None, ge=1, le=CAMPAIGN_MAX_INTERVAL_HOURS)
+    weekdays: list[int] | None = Field(default=None, max_length=7)
+    time_utc: str | None = Field(default=None, max_length=5)
+    message_html: str | None = Field(
+        default=None, min_length=1, max_length=CAMPAIGN_MESSAGE_MAX_LENGTH
+    )
+    promo_code_id: int | None = None
+    enabled: bool | None = None
 
 
 class BroadcastMediaUploadRequest(BaseModel):
@@ -2423,6 +2454,84 @@ async def create_broadcast(
         media_path=media_path,
         buttons=buttons,
     )
+
+
+@app.get("/api/admin/campaigns")
+async def admin_list_campaigns(
+    request: Request,
+    _user: AuthenticatedUser = Depends(admin_user),
+) -> list[dict[str, object]]:
+    repository: DeltaRepository = request.app.state.repository
+    return await repository.admin_list_campaigns()
+
+
+@app.post("/api/admin/campaigns")
+async def admin_create_campaign(
+    payload: CampaignCreateRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "campaign")
+    message = sanitize_telegram_html(payload.message_html)
+    if not message:
+        raise HTTPException(status_code=422, detail="Campaign message is required")
+    repository: DeltaRepository = request.app.state.repository
+    try:
+        created = await repository.admin_create_campaign(
+            kind=payload.kind,
+            audience=payload.audience,
+            schedule_mode=payload.schedule_mode,
+            interval_hours=payload.interval_hours,
+            weekdays=payload.weekdays,
+            time_utc=payload.time_utc,
+            message_html=message,
+            promo_code_id=payload.promo_code_id,
+            enabled=payload.enabled,
+            created_by=user.telegram_id,
+        )
+    except RepositoryError as exc:
+        detail = str(exc)
+        code = 404 if detail == "Promo code not found" else 422
+        raise HTTPException(status_code=code, detail=detail) from exc
+    return created
+
+
+@app.patch("/api/admin/campaigns/{campaign_id}")
+async def admin_update_campaign(
+    campaign_id: int,
+    payload: CampaignUpdateRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "campaign-update")
+    repository: DeltaRepository = request.app.state.repository
+    fields = payload.model_dump(exclude_unset=True)
+    if "message_html" in fields:
+        message = sanitize_telegram_html(fields["message_html"])
+        if not message:
+            raise HTTPException(status_code=422, detail="Campaign message is required")
+        fields["message_html"] = message
+    try:
+        updated = await repository.admin_update_campaign(campaign_id, **fields)
+    except RepositoryError as exc:
+        detail = str(exc)
+        code = 404 if detail in ("Campaign not found", "Promo code not found") else 422
+        raise HTTPException(status_code=code, detail=detail) from exc
+    return updated
+
+
+@app.post("/api/admin/campaigns/{campaign_id}/run")
+async def run_campaign(
+    campaign_id: int,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "campaign-run")
+    repository: DeltaRepository = request.app.state.repository
+    try:
+        return await repository.dispatch_campaign(campaign_id, force=True)
+    except RepositoryError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/admin/treasury")

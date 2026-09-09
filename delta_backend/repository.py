@@ -1886,10 +1886,25 @@ class DeltaRepository:
         )
         broadcast_id = int(broadcast["id"])
         async with self.transaction() as connection:
-            await connection.execute(
-                "UPDATE campaigns SET last_sent_at = ?, updated_at = ? WHERE id = ?",
-                (now, now, campaign_id),
-            )
+            if force:
+                # A forced admin "run now" send must still push the schedule
+                # forward. Without this the slot stays due (or in the past),
+                # so the background scheduler's next tick would claim it and
+                # send the same campaign again within seconds.
+                try:
+                    next_run_at = compute_next_run_at(campaign, now)
+                except RepositoryError:
+                    next_run_at = now + CAMPAIGN_DAY_SECONDS
+                await connection.execute(
+                    "UPDATE campaigns SET last_sent_at = ?, next_run_at = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (now, next_run_at, now, campaign_id),
+                )
+            else:
+                await connection.execute(
+                    "UPDATE campaigns SET last_sent_at = ?, updated_at = ? WHERE id = ?",
+                    (now, now, campaign_id),
+                )
             await connection.execute(
                 "INSERT INTO audit_events(event_type, details, created_at) "
                 "VALUES ('campaign_dispatched', ?, ?)",
