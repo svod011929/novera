@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
-from typing import Any
+from typing import Any, Protocol
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
@@ -14,6 +14,12 @@ from ..amounts import minor_to_text
 from ..config import Settings
 
 logger = logging.getLogger(__name__)
+
+
+class OpsChatSettingsStore(Protocol):
+    async def get_ops_chat_settings(
+        self, *, env_chat_id: int | None = None, env_topic_id: int | None = None
+    ) -> dict[str, object]: ...
 
 
 def format_user_line(
@@ -107,38 +113,67 @@ def format_payout_ops_html(
     )
 
 
+def env_ops_chat_id(settings: Settings) -> int | None:
+    chat_id = settings.ops_chat_id
+    if chat_id is None and settings.log_channel_id is not None:
+        chat_id = settings.log_channel_id
+    return int(chat_id) if chat_id is not None else None
+
+
+def env_ops_topic_id(settings: Settings) -> int | None:
+    if settings.ops_topic_id is None:
+        return None
+    return int(settings.ops_topic_id)
+
+
 class OpsChatNotifier:
-    """Send deposit/payout alerts to OPS_CHAT_ID (optional forum topic)."""
+    """Send deposit/payout alerts; DB admin settings override env fallback."""
 
-    def __init__(self, settings: Settings, bot_token: str) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        bot_token: str,
+        repository: OpsChatSettingsStore | None = None,
+    ) -> None:
         self.settings = settings
+        self.repository = repository
         self.bot = Bot(bot_token)
-        chat_id = settings.ops_chat_id
-        if chat_id is None and settings.log_channel_id is not None:
-            chat_id = settings.log_channel_id
-        self.chat_id = int(chat_id) if chat_id is not None else None
-        self.topic_id = (
-            int(settings.ops_topic_id) if settings.ops_topic_id is not None else None
-        )
 
-    @property
-    def enabled(self) -> bool:
-        return self.chat_id is not None
+    async def resolve_target(self) -> tuple[int | None, int | None]:
+        env_chat = env_ops_chat_id(self.settings)
+        env_topic = env_ops_topic_id(self.settings)
+        if self.repository is not None:
+            cfg = await self.repository.get_ops_chat_settings(
+                env_chat_id=env_chat,
+                env_topic_id=env_topic,
+            )
+            if not cfg.get("active"):
+                return None, None
+            chat_id = cfg.get("chat_id")
+            topic_id = cfg.get("topic_id")
+            return (
+                int(chat_id) if chat_id is not None else None,
+                int(topic_id) if topic_id is not None else None,
+            )
+        if env_chat is None:
+            return None, None
+        return env_chat, env_topic
 
     async def close(self) -> None:
         await self.bot.session.close()
 
     async def _send(self, text: str, *, preview: bool) -> None:
-        if not self.enabled:
+        chat_id, topic_id = await self.resolve_target()
+        if chat_id is None:
             return
         kwargs: dict[str, Any] = {
-            "chat_id": self.chat_id,
+            "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": not preview,
         }
-        if self.topic_id is not None:
-            kwargs["message_thread_id"] = self.topic_id
+        if topic_id is not None:
+            kwargs["message_thread_id"] = topic_id
         try:
             await self.bot.send_message(**kwargs)
         except TelegramRetryAfter as exc:
@@ -166,8 +201,6 @@ class OpsChatNotifier:
         deposit_id: int,
         tx_hash: str | None = None,
     ) -> None:
-        if not self.enabled:
-            return
         text = format_deposit_ops_html(
             telegram_id=telegram_id,
             username=username,
@@ -190,8 +223,6 @@ class OpsChatNotifier:
         kind: str,
         subtype: str | None = None,
     ) -> None:
-        if not self.enabled:
-            return
         text = format_payout_ops_html(
             telegram_id=telegram_id,
             username=username,

@@ -56,7 +56,7 @@ from .services.notifications import UserNotificationService
 from .services.deposit_monitor import DepositMonitor
 from .services.payouts import DailyPayoutService
 from .services.safety import PayoutCircuitBreaker, SafetyMonitor, SafetyRuntime
-from .services.ops_chat import OpsChatNotifier
+from .services.ops_chat import OpsChatNotifier, env_ops_chat_id, env_ops_topic_id
 from .telegram_auth import TelegramAuthError, TelegramUser, validate_init_data
 # NOVERA admin inviter management
 # NOVERA real admin treasury test payouts
@@ -352,6 +352,12 @@ class BroadcastTestRequest(BaseModel):
     """Text-only rehearsal delivered to the acting admin, never to an audience."""
 
     message: str = Field(min_length=1, max_length=4096)
+
+
+class OpsChatSettingsRequest(BaseModel):
+    enabled: bool = True
+    chat_id: int | None = None
+    topic_id: int | None = None
 
 
 class RuntimeSettingsRequest(BaseModel):
@@ -1083,7 +1089,7 @@ async def lifespan(application: FastAPI):
         )
     )
 
-    ops_chat = OpsChatNotifier(chain_settings, bot_token)
+    ops_chat = OpsChatNotifier(chain_settings, bot_token, repository)
     repository.set_ops_chat_notifier(ops_chat)
     application.state.ops_chat = ops_chat
 
@@ -3052,6 +3058,40 @@ async def admin_safety(
     result = runtime.snapshot()
     result["queue"] = await repository.payout_safety_metrics()
     return result
+
+
+@app.get("/api/admin/ops-chat")
+async def admin_ops_chat(
+    request: Request,
+    _user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    repository: DeltaRepository = request.app.state.repository
+    chain_settings: Settings = request.app.state.chain_settings
+    return await repository.get_ops_chat_settings(
+        env_chat_id=env_ops_chat_id(chain_settings),
+        env_topic_id=env_ops_topic_id(chain_settings),
+    )
+
+
+@app.put("/api/admin/ops-chat")
+async def update_admin_ops_chat(
+    payload: OpsChatSettingsRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "ops-chat-settings")
+    repository: DeltaRepository = request.app.state.repository
+    chain_settings: Settings = request.app.state.chain_settings
+    await repository.set_ops_chat_settings(
+        enabled=payload.enabled,
+        chat_id=payload.chat_id,
+        topic_id=payload.topic_id,
+        changed_by=user.telegram_id,
+    )
+    return await repository.get_ops_chat_settings(
+        env_chat_id=env_ops_chat_id(chain_settings),
+        env_topic_id=env_ops_topic_id(chain_settings),
+    )
 
 
 @app.get("/api/admin/system")

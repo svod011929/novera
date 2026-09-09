@@ -400,6 +400,13 @@
   };
   Object.entries(UNMATCHED_ADMIN_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
 
+  const OPS_CHAT_I18N = {
+    ru:{opsChatTitle:'Ops-чат депозитов и выплат',opsChatHint:'Сообщения о новых депозитах и подтверждённых выплатах в супергруппу или ветку форума. Бот должен быть админом чата.',opsChatEnabled:'Включить уведомления',opsChatId:'Chat ID супергруппы',opsTopicId:'Topic ID ветки (необязательно)',opsChatSave:'Сохранить ops-чат',opsChatSaved:'Настройки ops-чата сохранены',opsChatSource:'Источник',opsChatActive:'Активен',opsChatInactive:'Выключен / нет chat id',opsChatEnvFallback:'Пустой Chat ID в панели → используется .env (OPS_CHAT_ID)',opsSourceDatabase:'база',opsSourceEnv:'.env',opsSourceDisabled:'выкл.',opsSourceNone:'не задан'},
+    en:{opsChatTitle:'Ops chat for deposits & payouts',opsChatHint:'Alerts for new deposits and confirmed payouts to a supergroup or forum topic. Bot must be a chat admin.',opsChatEnabled:'Enable alerts',opsChatId:'Supergroup chat ID',opsTopicId:'Forum topic ID (optional)',opsChatSave:'Save ops chat',opsChatSaved:'Ops chat settings saved',opsChatSource:'Source',opsChatActive:'Active',opsChatInactive:'Off / no chat id',opsChatEnvFallback:'Empty Chat ID in admin → falls back to .env (OPS_CHAT_ID)',opsSourceDatabase:'database',opsSourceEnv:'.env',opsSourceDisabled:'disabled',opsSourceNone:'none'},
+    uk:{opsChatTitle:'Ops-чат депозитів і виплат',opsChatHint:'Повідомлення про нові депозити та підтверджені виплати в супергрупу або тему форуму.',opsChatEnabled:'Увімкнути сповіщення',opsChatId:'Chat ID супергрупи',opsTopicId:'Topic ID теми (необов’язково)',opsChatSave:'Зберегти ops-чат',opsChatSaved:'Налаштування ops-чату збережено',opsChatSource:'Джерело',opsChatActive:'Активний',opsChatInactive:'Вимкнено / немає chat id',opsChatEnvFallback:'Порожній Chat ID у панелі → використовується .env',opsSourceDatabase:'база',opsSourceEnv:'.env',opsSourceDisabled:'вимк.',opsSourceNone:'не задано'}
+  };
+  Object.entries(OPS_CHAT_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
+
   const TEST_PAYOUT_I18N = {
     ru:{testPayout:'Тестовая выплата',testPayoutTitle:'Реальная тестовая выплата',testPayoutHint:'Проверка реального автовывода тем же payout-worker, который обслуживает выплаты пользователей. Минимум — 1 USDT.',testPayoutWarning:'Это реальная необратимая транзакция из казны. Указанная сумма USDT будет отправлена на введённый BSC-кошелёк.',testPayoutAddress:'Кошелёк получателя',testPayoutAmount:'Сумма USDT',testPayoutAcknowledge:'Я понимаю, что USDT будут реально отправлены из казны',testPayoutSend:'Запустить реальную выплату',testPayoutQueued:'Тестовая выплата поставлена в очередь автовывода',testPayoutHistory:'Последние тестовые выплаты',testPayoutNone:'Тестовых выплат ещё не было.',testPayoutMinimum:'Минимальная тестовая выплата — 1 USDT',testPayoutSameWallet:'Для теста укажите кошелёк, отличный от казны',treasuryInsufficientUsdt:'Недостаточно USDT в казне',treasuryNoGas:'В казне нет BNB для комиссии сети',realPayoutsDisabled:'Реальные blockchain-выплаты не настроены',testPayoutConfirmDialog:'Подтвердить РЕАЛЬНУЮ выплату {amount} USDT на {address}? Отменить blockchain-транзакцию после отправки невозможно.',openExplorer:'Открыть транзакцию'},
     en:{testPayout:'Test payout',testPayoutTitle:'Real test payout',testPayoutHint:'Tests the same automatic payout worker used for user withdrawals. Minimum: 1 USDT.',testPayoutWarning:'This is a real irreversible treasury transaction. The entered USDT amount will be sent to the specified BSC wallet.',testPayoutAddress:'Recipient wallet',testPayoutAmount:'USDT amount',testPayoutAcknowledge:'I understand that real USDT will leave the treasury',testPayoutSend:'Run real payout',testPayoutQueued:'Test payout queued for automatic withdrawal',testPayoutHistory:'Recent test payouts',testPayoutNone:'No test payouts yet.',testPayoutMinimum:'Minimum test payout is 1 USDT',testPayoutSameWallet:'Use a wallet different from the treasury',treasuryInsufficientUsdt:'Treasury has insufficient USDT',treasuryNoGas:'Treasury has no BNB for network gas',realPayoutsDisabled:'Real blockchain payouts are not configured',testPayoutConfirmDialog:'Confirm REAL payout of {amount} USDT to {address}? A blockchain transaction cannot be reversed after broadcast.',openExplorer:'Open transaction'},
@@ -2712,7 +2719,11 @@
     degraded:tr('setupDegraded')
   }[value]||value||tr('setupBootstrap'));
   async function loadAdminSystem(){
-    const [s,cfgSafe]=await Promise.all([api('/api/admin/system'),api('/api/admin/chain-config')]);
+    const [s,cfgSafe,opsChat]=await Promise.all([
+      api('/api/admin/system'),
+      api('/api/admin/chain-config'),
+      api('/api/admin/ops-chat').catch(()=>null)
+    ]);
     const cfg=s.blockchain_configuration||{},setup=cfgSafe.setup||s.setup||{},isOwner=Boolean(state.data&&state.data.auth&&state.data.auth.is_owner);
     state.adminCache.chainConfig=cfgSafe;
     if(!state.adminCache.pendingChainConfig && cfgSafe.pending) state.adminCache.pendingChainConfig=cfgSafe.pending;
@@ -2725,10 +2736,37 @@
     const status=String(setup.status||'bootstrap');
     const stepsCard=`<article class="panel activation-steps-card" role="note"><div class="form-heading"><span class="form-icon">①</span><div><strong>${esc(tr('activationStepsTitle'))}</strong><small>${esc(tr('keyBackupHint'))}</small></div></div><ol class="activation-steps"><li class="${status==='bootstrap'&&!pending?'current':''}">${esc(tr('activationStep1'))}</li><li class="${pending?'current':''}">${esc(tr('activationStep2'))}</li><li class="${pending?'':''}">${esc(tr('activationStep3'))}</li><li>${esc(tr('activationStep4'))}</li></ol></article>`;
     const postActive=status==='active'?`<article class="panel post-activate-card"><div class="form-heading"><span class="form-icon">✓</span><div><strong>${esc(tr('postActivateChecklist'))}</strong><small>${esc(tr('postActivateTerms'))}</small></div></div><p class="field-hint">${esc(tr('postActivateBackup'))}</p><button id="goAdminTerms" class="secondary-btn touch-target" type="button">${esc(tr('terms'))}</button></article>`:'';
-    $('admin-system').innerHTML=`${statusCard}${stepsCard}<div class="system-grid"><article class="panel system-card"><h3>${esc(tr('system'))}</h3><div class="system-state-row"><span>${esc(tr('uptime'))}</span><strong>${esc(Math.floor(Number(s.uptime_seconds||0)/60))} min</strong></div><div class="system-state-row"><span>Chain ID</span><strong>${esc(s.chain_id)}</strong></div><div class="system-state-row"><span>RPC</span><strong>${cfg.rpc_configured?esc(tr('configured')):esc(tr('notConfigured'))}</strong></div><div class="system-state-row"><span>WSS</span><strong>${cfg.wss_configured?esc(tr('configured')):esc(tr('notConfigured'))}</strong></div></article><article class="panel system-card"><h3>${esc(tr('workers'))}</h3>${taskRows||'—'}</article></div>${ownerForm}${activation}${postActive}`;
+    const opsSourceKey=({database:'opsSourceDatabase',env:'opsSourceEnv',disabled:'opsSourceDisabled',none:'opsSourceNone'})[String(opsChat&&opsChat.source||'none')]||'opsSourceNone';
+    const opsStoredChat=opsChat&&opsChat.stored_chat_id!=null?String(opsChat.stored_chat_id):(opsChat&&opsChat.env_chat_id!=null&&opsChat.source==='env'?String(opsChat.env_chat_id):'');
+    const opsStoredTopic=opsChat&&opsChat.stored_topic_id!=null?String(opsChat.stored_topic_id):(opsChat&&opsChat.topic_id!=null&&opsChat.source==='env'?String(opsChat.topic_id):'');
+    const opsCard=opsChat?`<article class="panel settings-card"><div class="form-heading"><span class="form-icon">📣</span><div><strong>${esc(tr('opsChatTitle'))}</strong><small>${esc(tr('opsChatHint'))}</small></div></div><div class="system-state-row"><span>${esc(tr('opsChatSource'))}</span><strong>${esc(tr(opsSourceKey))}</strong></div><div class="system-state-row"><span>${esc(tr('status'))}</span><strong>${opsChat.active?esc(tr('opsChatActive')):esc(tr('opsChatInactive'))}</strong></div><label class="switch-row"><span>${esc(tr('opsChatEnabled'))}</span><input id="opsChatEnabled" type="checkbox" ${opsChat.enabled?'checked':''}></label><div class="settings-grid"><label class="settings-field"><span>${esc(tr('opsChatId'))}</span><input id="opsChatId" class="text-input" inputmode="numeric" placeholder="-100…" value="${esc(opsStoredChat)}"></label><label class="settings-field"><span>${esc(tr('opsTopicId'))}</span><input id="opsTopicId" class="text-input" inputmode="numeric" placeholder="123" value="${esc(opsStoredTopic)}"></label></div><p class="field-hint">${esc(tr('opsChatEnvFallback'))}</p><button id="saveOpsChatSettings" class="primary-btn" type="button">${esc(tr('opsChatSave'))}</button></article>`:'';
+    $('admin-system').innerHTML=`${statusCard}${stepsCard}<div class="system-grid"><article class="panel system-card"><h3>${esc(tr('system'))}</h3><div class="system-state-row"><span>${esc(tr('uptime'))}</span><strong>${esc(Math.floor(Number(s.uptime_seconds||0)/60))} min</strong></div><div class="system-state-row"><span>Chain ID</span><strong>${esc(s.chain_id)}</strong></div><div class="system-state-row"><span>RPC</span><strong>${cfg.rpc_configured?esc(tr('configured')):esc(tr('notConfigured'))}</strong></div><div class="system-state-row"><span>WSS</span><strong>${cfg.wss_configured?esc(tr('configured')):esc(tr('notConfigured'))}</strong></div></article><article class="panel system-card"><h3>${esc(tr('workers'))}</h3>${taskRows||'—'}</article></div>${opsCard}${ownerForm}${activation}${postActive}`;
     if($('validateChainConfig'))$('validateChainConfig').addEventListener('click',validateAdminChainConfig);
     if($('activateChainConfig'))$('activateChainConfig').addEventListener('click',activateAdminChainConfig);
     if($('goAdminTerms'))$('goAdminTerms').addEventListener('click',()=>setAdminTab('terms'));
+    if($('saveOpsChatSettings'))$('saveOpsChatSettings').addEventListener('click',saveAdminOpsChatSettings);
+  }
+  async function saveAdminOpsChatSettings(){
+    const enabled=Boolean($('opsChatEnabled')&&$('opsChatEnabled').checked);
+    const chatRaw=String($('opsChatId')&&$('opsChatId').value||'').trim();
+    const topicRaw=String($('opsTopicId')&&$('opsTopicId').value||'').trim();
+    let chat_id=null, topic_id=null;
+    if(chatRaw){
+      if(!/^-?\d+$/.test(chatRaw)){toast(tr('invalidData'),'error');return;}
+      chat_id=Number(chatRaw);
+      if(!Number.isSafeInteger(chat_id)){toast(tr('invalidData'),'error');return;}
+    }
+    if(topicRaw){
+      if(!/^\d+$/.test(topicRaw)){toast(tr('invalidData'),'error');return;}
+      topic_id=Number(topicRaw);
+      if(!Number.isSafeInteger(topic_id)||topic_id<=0){toast(tr('invalidData'),'error');return;}
+    }
+    const btn=$('saveOpsChatSettings'); if(btn) btn.disabled=true;
+    try{
+      await api('/api/admin/ops-chat',{method:'PUT',body:JSON.stringify({enabled,chat_id,topic_id})});
+      toast(tr('opsChatSaved'),'success');
+      await loadAdminSystem();
+    }catch(e){handleApiError(e); if(btn&&document.body.contains(btn)) btn.disabled=false;}
   }
   async function validateAdminChainConfig(){
     const token_contract=$('chainTokenContract').value.trim(),mode=$('chainMode').value,scan=Number($('chainScanStart').value),rpc=$('chainRpcUrl').value.trim(),wss=$('chainWssUrl').value.trim(),seed=$('chainSeedPhrase').value.trim(),reason=$('chainConfigReason').value.trim();

@@ -913,6 +913,103 @@ class DeltaRepository:
                 (key, value, now),
             )
 
+    OPS_CHAT_SETTINGS_KEY = "ops_chat_alerts"
+
+    async def get_ops_chat_settings(
+        self, *, env_chat_id: int | None = None, env_topic_id: int | None = None
+    ) -> dict[str, object]:
+        raw = await self.get_safety_state(self.OPS_CHAT_SETTINGS_KEY)
+        stored: dict[str, object] = {}
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    stored = parsed
+            except (TypeError, ValueError, json.JSONDecodeError):
+                stored = {}
+
+        enabled = True if "enabled" not in stored else bool(stored.get("enabled"))
+
+        stored_chat_raw = stored.get("chat_id") if "chat_id" in stored else None
+        stored_topic_raw = stored.get("topic_id") if "topic_id" in stored else None
+        stored_chat_id: int | None = None
+        stored_topic_id: int | None = None
+        if stored_chat_raw is not None and str(stored_chat_raw).strip() != "":
+            try:
+                stored_chat_id = int(stored_chat_raw)
+            except (TypeError, ValueError):
+                stored_chat_id = None
+        if stored_topic_raw is not None and str(stored_topic_raw).strip() != "":
+            try:
+                stored_topic_id = int(stored_topic_raw)
+            except (TypeError, ValueError):
+                stored_topic_id = None
+
+        chat_id: int | None = None
+        topic_id: int | None = None
+        source = "none"
+        if stored_chat_id is not None:
+            chat_id = stored_chat_id
+            source = "database"
+            if "topic_id" in stored:
+                topic_id = stored_topic_id
+            else:
+                topic_id = env_topic_id
+        elif env_chat_id is not None:
+            chat_id = int(env_chat_id)
+            source = "env"
+            topic_id = env_topic_id if env_topic_id is None else int(env_topic_id)
+
+        if not enabled:
+            source = "disabled"
+
+        return {
+            "enabled": enabled,
+            "chat_id": chat_id if enabled else None,
+            "topic_id": topic_id if enabled and chat_id is not None else None,
+            "stored_chat_id": stored_chat_id,
+            "stored_topic_id": stored_topic_id,
+            "env_chat_id": env_chat_id,
+            "env_topic_id": env_topic_id,
+            "source": source,
+            "active": bool(enabled and chat_id is not None),
+        }
+
+    async def set_ops_chat_settings(
+        self,
+        *,
+        enabled: bool,
+        chat_id: int | None,
+        topic_id: int | None,
+        changed_by: int,
+    ) -> dict[str, object]:
+        payload = {
+            "enabled": bool(enabled),
+            "chat_id": int(chat_id) if chat_id is not None else None,
+            "topic_id": int(topic_id) if topic_id is not None else None,
+            "updated_by": int(changed_by),
+        }
+        now = int(time.time())
+        async with self.transaction() as connection:
+            await connection.execute(
+                """
+                INSERT INTO safety_state(key, value_text, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value_text = excluded.value_text,
+                    updated_at = excluded.updated_at
+                """,
+                (self.OPS_CHAT_SETTINGS_KEY, json.dumps(payload), now),
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) VALUES (?, ?, ?)",
+                (
+                    "ops_chat_settings_updated",
+                    f"admin={changed_by};enabled={payload['enabled']};"
+                    f"chat={payload['chat_id']};topic={payload['topic_id']}",
+                    now,
+                ),
+            )
+        return payload
+
     async def granted_admin_ids(self) -> set[int]:
         connection = self._connection()
         async with self._lock:

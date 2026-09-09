@@ -35,14 +35,15 @@
 
 ## Конфиг
 
-В `Settings` (`delta_backend/config.py`) и `.env.example`:
+Приоритет: **настройки в БД** (Админ → Система) перекрывают `.env`.
 
-| Переменная | Смысл |
-|------------|--------|
-| `OPS_CHAT_ID` | ID супергруппы/канала; пусто = notifier выключен (no-op) |
-| `OPS_TOPIC_ID` | Опциональный `message_thread_id` ветки; пусто = корень чата |
+| Источник | Поля |
+|----------|------|
+| Admin UI / `PUT /api/admin/ops-chat` | `enabled`, `chat_id`, `topic_id` → `safety_state.ops_chat_alerts` |
+| Fallback `.env` | `OPS_CHAT_ID`, опционально `OPS_TOPIC_ID` |
+| Legacy | `LOG_CHANNEL_ID` если `OPS_CHAT_ID` пуст и в БД нет chat_id |
 
-Fallback: если `OPS_CHAT_ID` пуст, но задан существующий `LOG_CHANNEL_ID` — использовать его как chat id (обратная совместимость мёртвого поля).
+Пустой Chat ID в панели = сброс DB-override и fallback на `.env`. `enabled=false` — тишина даже при заданном env.
 
 Бот должен быть админом чата с правом писать в выбранную ветку.
 
