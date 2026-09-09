@@ -10,7 +10,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from .amounts import MINOR_FACTOR, calculate_bps, minor_to_text
+from .amounts import MINOR_FACTOR, bps_to_percent_text, calculate_bps, minor_to_text
 from .api_settings import MiniAppSettings
 from .models import TransferEvent
 from .telegram_auth import TelegramUser
@@ -410,6 +410,109 @@ def compute_promo_bonus_minor(promo: dict[str, object], base_minor: int) -> int:
     raise RepositoryError("Invalid promo bonus type")
 
 
+CAMPAIGN_KINDS = {"promo", "partner", "custom"}
+CAMPAIGN_SCHEDULE_MODES = {"interval", "weekly"}
+CAMPAIGN_MESSAGE_MAX_LENGTH = 4096
+CAMPAIGN_MAX_INTERVAL_HOURS = 24 * 365
+CAMPAIGN_DAY_SECONDS = 86_400
+
+
+def parse_campaign_weekdays(raw: object) -> list[int]:
+    """Normalise a weekday selection into a sorted list of 0=Mon .. 6=Sun."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        try:
+            values = json.loads(raw or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RepositoryError("weekdays must be a list of integers 0-6") from exc
+    else:
+        values = raw
+    if not isinstance(values, list | tuple):
+        raise RepositoryError("weekdays must be a list of integers 0-6")
+    weekdays: set[int] = set()
+    for value in values:
+        if isinstance(value, bool):
+            raise RepositoryError("weekdays must be a list of integers 0-6")
+        try:
+            day = int(value)
+        except (TypeError, ValueError) as exc:
+            raise RepositoryError("weekdays must be a list of integers 0-6") from exc
+        if not 0 <= day <= 6:
+            raise RepositoryError("weekdays must be a list of integers 0-6")
+        weekdays.add(day)
+    return sorted(weekdays)
+
+
+def parse_campaign_time_utc(raw: object) -> tuple[int, int]:
+    parts = str(raw or "").strip().split(":")
+    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
+        raise RepositoryError("time_utc must use the HH:MM format")
+    hour, minute = (int(part) for part in parts)
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise RepositoryError("time_utc must use the HH:MM format")
+    return hour, minute
+
+
+def compute_next_run_at(campaign: dict[str, object], after: int) -> int:
+    after = int(after)
+    mode = str(campaign.get("schedule_mode") or "")
+    if mode == "interval":
+        hours = max(1, int(campaign.get("interval_hours") or 0))
+        return after + hours * 3600
+    if mode != "weekly":
+        raise RepositoryError("Unsupported campaign schedule mode")
+    raw_weekdays = campaign.get("weekdays")
+    if raw_weekdays is None:
+        raw_weekdays = campaign.get("weekdays_json")
+    weekdays = parse_campaign_weekdays(raw_weekdays)
+    if not weekdays:
+        raise RepositoryError("Weekly campaigns require at least one weekday")
+    hour, minute = parse_campaign_time_utc(campaign.get("time_utc"))
+    target = hour * 3600 + minute * 60
+    midnight_utc = after - after % CAMPAIGN_DAY_SECONDS
+    for offset in range(8):
+        candidate = midnight_utc + offset * CAMPAIGN_DAY_SECONDS + target
+        if candidate > after and time.gmtime(candidate).tm_wday in weekdays:
+            return candidate
+    raise RepositoryError("Weekly campaign has no reachable run slot")
+
+
+def campaign_promo_bonus_label(promo: dict[str, object]) -> str:
+    kind = str(promo.get("bonus_type") or "")
+    if kind == "percent":
+        return f"{bps_to_percent_text(int(promo.get('bonus_bps') or 0))}%"
+    if kind == "fixed":
+        return f"{minor_to_text(int(promo.get('bonus_fixed_minor') or 0))} USDT"
+    raise RepositoryError("Invalid promo bonus type")
+
+
+def render_campaign_message(message_html: str, promo: dict[str, object] | None) -> str:
+    message = str(message_html or "")
+    if promo is None:
+        return message
+    return message.replace(
+        "{{code}}", html.escape(str(promo.get("code") or ""))
+    ).replace("{{bonus_label}}", html.escape(campaign_promo_bonus_label(promo)))
+
+
+def campaign_promo_skip_reason(promo: dict[str, object] | None, now: int) -> str | None:
+    """Return why a promo campaign must not be sent, or ``None`` when it may run."""
+    if not promo:
+        return "promo_missing"
+    if not promo.get("enabled"):
+        return "promo_disabled"
+    valid_from = promo.get("valid_from")
+    if valid_from is not None and int(now) < int(valid_from):
+        return "promo_not_active"
+    valid_until = promo.get("valid_until")
+    if valid_until is not None and int(now) > int(valid_until):
+        return "promo_expired"
+    if int(promo.get("redemption_count") or 0) >= int(promo.get("max_redemptions") or 0):
+        return "promo_cap_reached"
+    return None
+
+
 class DeltaRepository:
     def __init__(self, path: Path | str, business: MiniAppSettings) -> None:
         self.path = Path(path)
@@ -588,6 +691,30 @@ class DeltaRepository:
               UNIQUE(promo_code_id, user_id)
             )
             """
+        )
+        await connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS campaigns (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              kind TEXT NOT NULL CHECK (kind IN ('promo', 'partner', 'custom')),
+              audience TEXT NOT NULL CHECK (audience IN ('all', 'investors', 'partners')),
+              schedule_mode TEXT NOT NULL CHECK (schedule_mode IN ('interval', 'weekly')),
+              interval_hours INTEGER NOT NULL DEFAULT 24 CHECK (interval_hours >= 1),
+              weekdays_json TEXT NOT NULL DEFAULT '[]',
+              time_utc TEXT NOT NULL DEFAULT '12:00',
+              message_html TEXT NOT NULL,
+              promo_code_id INTEGER REFERENCES promo_codes(id),
+              enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+              last_sent_at INTEGER,
+              next_run_at INTEGER NOT NULL,
+              created_by INTEGER NOT NULL,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            )
+            """
+        )
+        await connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_campaigns_due ON campaigns(enabled, next_run_at)"
         )
 
         cursor = await connection.execute("PRAGMA table_info(deposit_invoices)")
@@ -1444,6 +1571,343 @@ class DeltaRepository:
             )
             row = await cursor.fetchone()
         return self._promo_row_to_dict(row) if row else None
+
+    @staticmethod
+    def _campaign_row_to_dict(row: aiosqlite.Row | dict[str, object]) -> dict[str, object]:
+        data = dict(row)
+        data["enabled"] = bool(int(data.get("enabled") or 0))
+        data["weekdays"] = parse_campaign_weekdays(data.get("weekdays_json"))
+        return data
+
+    @staticmethod
+    def _prepare_campaign_fields(
+        *,
+        kind: object,
+        audience: object,
+        schedule_mode: object,
+        interval_hours: object,
+        weekdays: object,
+        time_utc: object,
+        message_html: object,
+        promo_code_id: object,
+    ) -> dict[str, object]:
+        kind = str(kind or "")
+        if kind not in CAMPAIGN_KINDS:
+            raise RepositoryError("Unsupported campaign kind")
+        audience = str(audience or "")
+        if audience not in BROADCAST_AUDIENCE_FILTERS:
+            raise RepositoryError("Unsupported campaign audience")
+        schedule_mode = str(schedule_mode or "")
+        if schedule_mode not in CAMPAIGN_SCHEDULE_MODES:
+            raise RepositoryError("Unsupported campaign schedule mode")
+        hours = int(interval_hours)
+        if not 1 <= hours <= CAMPAIGN_MAX_INTERVAL_HOURS:
+            raise RepositoryError(
+                f"interval_hours must be between 1 and {CAMPAIGN_MAX_INTERVAL_HOURS}"
+            )
+        parsed_weekdays = parse_campaign_weekdays(weekdays)
+        if schedule_mode == "weekly" and not parsed_weekdays:
+            raise RepositoryError("Weekly campaigns require at least one weekday")
+        hour, minute = parse_campaign_time_utc(time_utc)
+        message = str(message_html or "").strip()
+        if not message:
+            raise RepositoryError("Campaign message is required")
+        if len(message) > CAMPAIGN_MESSAGE_MAX_LENGTH:
+            raise RepositoryError(
+                f"Campaign message must be at most {CAMPAIGN_MESSAGE_MAX_LENGTH} characters"
+            )
+        promo_id = None if promo_code_id is None else int(promo_code_id)
+        if kind == "promo" and promo_id is None:
+            raise RepositoryError("Promo campaigns require promo_code_id")
+        return {
+            "kind": kind,
+            "audience": audience,
+            "schedule_mode": schedule_mode,
+            "interval_hours": hours,
+            "weekdays": parsed_weekdays,
+            "weekdays_json": json.dumps(parsed_weekdays, separators=(",", ":")),
+            "time_utc": f"{hour:02d}:{minute:02d}",
+            "message_html": message,
+            "promo_code_id": promo_id,
+        }
+
+    @staticmethod
+    async def _assert_promo_code_exists(
+        connection: aiosqlite.Connection, promo_code_id: object
+    ) -> None:
+        if promo_code_id is None:
+            return
+        cursor = await connection.execute(
+            "SELECT 1 FROM promo_codes WHERE id = ?", (int(promo_code_id),)
+        )
+        if not await cursor.fetchone():
+            raise RepositoryError("Promo code not found")
+
+    async def admin_create_campaign(
+        self,
+        *,
+        kind: str,
+        audience: str,
+        schedule_mode: str,
+        message_html: str,
+        created_by: int,
+        interval_hours: int = 24,
+        weekdays: list[int] | None = None,
+        time_utc: str = "12:00",
+        promo_code_id: int | None = None,
+        enabled: bool = True,
+        next_run_at: int | None = None,
+    ) -> dict[str, object]:
+        prepared = self._prepare_campaign_fields(
+            kind=kind,
+            audience=audience,
+            schedule_mode=schedule_mode,
+            interval_hours=interval_hours,
+            weekdays=weekdays,
+            time_utc=time_utc,
+            message_html=message_html,
+            promo_code_id=promo_code_id,
+        )
+        now = int(time.time())
+        run_at = compute_next_run_at(prepared, now) if next_run_at is None else int(next_run_at)
+        async with self.transaction() as connection:
+            await self._assert_promo_code_exists(connection, prepared["promo_code_id"])
+            cursor = await connection.execute(
+                """
+                INSERT INTO campaigns(
+                    kind, audience, schedule_mode, interval_hours, weekdays_json,
+                    time_utc, message_html, promo_code_id, enabled, next_run_at,
+                    created_by, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    prepared["kind"],
+                    prepared["audience"],
+                    prepared["schedule_mode"],
+                    prepared["interval_hours"],
+                    prepared["weekdays_json"],
+                    prepared["time_utc"],
+                    prepared["message_html"],
+                    prepared["promo_code_id"],
+                    1 if enabled else 0,
+                    run_at,
+                    int(created_by),
+                    now,
+                    now,
+                ),
+            )
+            cursor = await connection.execute(
+                "SELECT * FROM campaigns WHERE id = ?", (cursor.lastrowid,)
+            )
+            row = await cursor.fetchone()
+        return self._campaign_row_to_dict(row)
+
+    async def admin_list_campaigns(self) -> list[dict[str, object]]:
+        connection = self._connection()
+        async with self._lock:
+            cursor = await connection.execute("SELECT * FROM campaigns ORDER BY id DESC")
+            rows = await cursor.fetchall()
+        return [self._campaign_row_to_dict(row) for row in rows]
+
+    async def admin_update_campaign(
+        self, campaign_id: int, **fields: object
+    ) -> dict[str, object]:
+        allowed = {
+            "kind",
+            "audience",
+            "schedule_mode",
+            "interval_hours",
+            "weekdays",
+            "time_utc",
+            "message_html",
+            "promo_code_id",
+            "enabled",
+            "next_run_at",
+        }
+        unknown = set(fields) - allowed
+        if unknown:
+            raise RepositoryError(
+                f"Unknown campaign field(s): {', '.join(sorted(unknown))}"
+            )
+
+        now = int(time.time())
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT * FROM campaigns WHERE id = ?", (int(campaign_id),)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                raise RepositoryError("Campaign not found")
+            current = self._campaign_row_to_dict(row)
+            prepared = self._prepare_campaign_fields(
+                kind=fields.get("kind", current["kind"]),
+                audience=fields.get("audience", current["audience"]),
+                schedule_mode=fields.get("schedule_mode", current["schedule_mode"]),
+                interval_hours=fields.get("interval_hours", current["interval_hours"]),
+                weekdays=fields.get("weekdays", current["weekdays"]),
+                time_utc=fields.get("time_utc", current["time_utc"]),
+                message_html=fields.get("message_html", current["message_html"]),
+                promo_code_id=fields.get("promo_code_id", current["promo_code_id"]),
+            )
+            await self._assert_promo_code_exists(connection, prepared["promo_code_id"])
+
+            enabled = bool(fields["enabled"]) if "enabled" in fields else bool(current["enabled"])
+            schedule_keys = ("schedule_mode", "interval_hours", "weekdays", "time_utc")
+            if fields.get("next_run_at") is not None:
+                next_run_at = int(fields["next_run_at"])
+            elif any(key in fields for key in schedule_keys):
+                # A rescheduled campaign must not keep the slot derived from the old schedule.
+                next_run_at = compute_next_run_at(prepared, now)
+            else:
+                next_run_at = int(current["next_run_at"])
+
+            await connection.execute(
+                """
+                UPDATE campaigns SET
+                    kind = ?, audience = ?, schedule_mode = ?, interval_hours = ?,
+                    weekdays_json = ?, time_utc = ?, message_html = ?, promo_code_id = ?,
+                    enabled = ?, next_run_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    prepared["kind"],
+                    prepared["audience"],
+                    prepared["schedule_mode"],
+                    prepared["interval_hours"],
+                    prepared["weekdays_json"],
+                    prepared["time_utc"],
+                    prepared["message_html"],
+                    prepared["promo_code_id"],
+                    1 if enabled else 0,
+                    next_run_at,
+                    now,
+                    int(campaign_id),
+                ),
+            )
+            cursor = await connection.execute(
+                "SELECT * FROM campaigns WHERE id = ?", (int(campaign_id),)
+            )
+            row = await cursor.fetchone()
+        return self._campaign_row_to_dict(row)
+
+    async def claim_due_campaigns(self, now: int, limit: int = 10) -> list[dict[str, object]]:
+        """Take ownership of every campaign that is due, advancing its next slot.
+
+        The slot is advanced inside the claiming transaction, so a second worker
+        (or a second tick) cannot pick the same due window up again. Advancing
+        from ``now`` rather than from the stored slot also means a worker outage
+        never replays a backlog of missed sends.
+        """
+        now = int(now)
+        claimed: list[dict[str, object]] = []
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT * FROM campaigns
+                WHERE enabled = 1 AND next_run_at <= ?
+                ORDER BY next_run_at, id
+                LIMIT ?
+                """,
+                (now, max(1, min(int(limit), 100))),
+            )
+            for row in await cursor.fetchall():
+                campaign = self._campaign_row_to_dict(row)
+                try:
+                    next_run_at = compute_next_run_at(campaign, now)
+                except RepositoryError:
+                    next_run_at = now + CAMPAIGN_DAY_SECONDS
+                await connection.execute(
+                    "UPDATE campaigns SET next_run_at = ?, updated_at = ? WHERE id = ?",
+                    (next_run_at, now, int(campaign["id"])),
+                )
+                campaign["next_run_at"] = next_run_at
+                claimed.append(campaign)
+        return claimed
+
+    async def _record_campaign_skip(
+        self, campaign_id: int, kind: str, reason: str, now: int
+    ) -> dict[str, object]:
+        async with self.transaction() as connection:
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) "
+                "VALUES ('campaign_skipped', ?, ?)",
+                (f"campaign={campaign_id};kind={kind};reason={reason}", now),
+            )
+        return {
+            "campaign_id": int(campaign_id),
+            "status": "skipped",
+            "reason": reason,
+            "broadcast_id": None,
+        }
+
+    async def dispatch_campaign(
+        self, campaign_id: int, *, force: bool = False
+    ) -> dict[str, object]:
+        """Queue one broadcast for a campaign, or report why it was skipped.
+
+        ``force`` ignores the enabled flag for admin-triggered sends; promo
+        availability is always enforced so an exhausted code is never advertised.
+        """
+        campaign_id = int(campaign_id)
+        now = int(time.time())
+        connection = self._connection()
+        async with self._lock:
+            cursor = await connection.execute(
+                "SELECT * FROM campaigns WHERE id = ?", (campaign_id,)
+            )
+            row = await cursor.fetchone()
+            campaign = self._campaign_row_to_dict(row) if row else None
+            promo: dict[str, object] | None = None
+            if campaign is not None and campaign["promo_code_id"] is not None:
+                cursor = await connection.execute(
+                    "SELECT * FROM promo_codes WHERE id = ?",
+                    (int(campaign["promo_code_id"]),),
+                )
+                promo_row = await cursor.fetchone()
+                promo = self._promo_row_to_dict(promo_row) if promo_row else None
+
+        if campaign is None:
+            raise RepositoryError("Campaign not found")
+        kind = str(campaign["kind"])
+        if not campaign["enabled"] and not force:
+            return await self._record_campaign_skip(
+                campaign_id, kind, "campaign_disabled", now
+            )
+        if campaign["promo_code_id"] is not None or kind == "promo":
+            reason = campaign_promo_skip_reason(promo, now)
+            if reason is not None:
+                return await self._record_campaign_skip(campaign_id, kind, reason, now)
+
+        message = render_campaign_message(str(campaign["message_html"]), promo)
+        broadcast = await self.create_broadcast(
+            int(campaign["created_by"]),
+            message,
+            str(campaign["audience"]),
+        )
+        broadcast_id = int(broadcast["id"])
+        async with self.transaction() as connection:
+            await connection.execute(
+                "UPDATE campaigns SET last_sent_at = ?, updated_at = ? WHERE id = ?",
+                (now, now, campaign_id),
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) "
+                "VALUES ('campaign_dispatched', ?, ?)",
+                (
+                    f"campaign={campaign_id};kind={kind};"
+                    f"audience={campaign['audience']};broadcast={broadcast_id};"
+                    f"total={int(broadcast['total_count'])}",
+                    now,
+                ),
+            )
+        return {
+            "campaign_id": campaign_id,
+            "status": "sent",
+            "reason": None,
+            "broadcast_id": broadcast_id,
+            "audience": str(campaign["audience"]),
+            "total_count": int(broadcast["total_count"]),
+        }
 
     async def create_invoice(
         self,

@@ -45,6 +45,7 @@ from .repository import DeltaRepository, RepositoryError
 from .runtime_secrets import ChainSecretBundle, RuntimeSecretError, RuntimeSecretStore
 from .services.blockchain import EvmTokenClient
 from .services.broadcasts import BroadcastService
+from .services.campaigns import CampaignService
 from .services.notifications import UserNotificationService
 from .services.deposit_monitor import DepositMonitor
 from .services.payouts import DailyPayoutService
@@ -1016,6 +1017,16 @@ async def lifespan(application: FastAPI):
                 name="telegram-broadcast-worker",
             )
         )
+
+    # Scheduled campaigns only enqueue broadcast rows; claiming a due slot is
+    # transactional, so running this in every API process cannot double-send.
+    campaign_service = CampaignService(repository)
+    tasks.append(
+        asyncio.create_task(
+            campaign_service.run_forever(stop_event),
+            name="campaign-scheduler",
+        )
+    )
 
     notifier = UserNotificationService(repository, bot_token, business.miniapp_url)
     tasks.append(
