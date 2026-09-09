@@ -3095,6 +3095,18 @@ async def update_admin_ops_chat(
     )
 
 
+@app.post("/api/admin/ops-chat/test")
+async def admin_ops_chat_test(
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "ops-chat-test")
+    ops: OpsChatNotifier | None = getattr(request.app.state, "ops_chat", None)
+    if ops is None:
+        raise HTTPException(status_code=503, detail="Ops chat notifier unavailable")
+    return await ops.send_test()
+
+
 @app.get("/api/admin/system")
 async def admin_system(
     request: Request,

@@ -25,6 +25,16 @@ from delta_backend.telegram_auth import TelegramUser
 TOKEN = "123456:TEST_TOKEN"
 
 
+class RecordingOpsChat:
+    def __init__(self, result: dict[str, object]) -> None:
+        self.result = result
+        self.calls = 0
+
+    async def send_test(self) -> dict[str, object]:
+        self.calls += 1
+        return self.result
+
+
 def signed_init_data(*, user_id: int = 42, username: str = "delta_user") -> str:
     values = {
         "auth_date": str(int(time.time())),
@@ -159,6 +169,48 @@ async def test_current_telegram_init_data_overrides_shared_cookie(tmp_path) -> N
             assert response.status_code == 200
             assert response.json()["auth"]["telegram_id"] == 101
     finally:
+        await repository.close()
+
+
+async def test_admin_ops_chat_test_returns_notifier_result_as_200(tmp_path) -> None:
+    business = MiniAppSettings(_env_file=None, demo_mode=False, force_https=False)
+    chain = Settings(
+        _env_file=None,
+        bot_token=TOKEN,
+        admin_ids="42",
+        environment="testnet",
+        chain_enabled=False,
+        simulate_payouts=True,
+    )
+    repository = DeltaRepository(tmp_path / "ops-chat-test.sqlite3", business)
+    await repository.connect()
+    app.state.chain_settings = chain
+    app.state.business = business
+    app.state.repository = repository
+    app.state.rate_limiter = SlidingWindowRateLimiter()
+    ops_chat = RecordingOpsChat(
+        {
+            "ok": False,
+            "chat_id": None,
+            "topic_id": None,
+            "source": "none",
+            "detail": "Ops chat is inactive",
+        }
+    )
+    app.state.ops_chat = ops_chat
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.post(
+                "/api/admin/ops-chat/test",
+                headers={"X-Telegram-Init-Data": signed_init_data()},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == ops_chat.result
+        assert ops_chat.calls == 1
+    finally:
+        app.state.ops_chat = None
         await repository.close()
 
 
