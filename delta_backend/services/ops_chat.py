@@ -113,6 +113,75 @@ def format_payout_ops_html(
     )
 
 
+def _truncate_error(error: str, limit: int = 200) -> str:
+    clean = str(error or "").strip().replace("\n", " ")
+    if len(clean) <= limit:
+        return clean
+    return clean[: max(0, limit - 1)] + "…"
+
+
+def format_failed_payout_ops_html(
+    *,
+    telegram_id: int,
+    username: str | None,
+    first_name: str | None,
+    amount_minor: int,
+    payout_id: int,
+    kind: str,
+    subtype: str | None = None,
+    error: str,
+) -> str:
+    user_line = format_user_line(
+        telegram_id=telegram_id, username=username, first_name=first_name
+    )
+    amount = html.escape(minor_to_text(int(amount_minor)))
+    label = html.escape(payout_kind_label(kind, subtype))
+    err = html.escape(_truncate_error(error))
+    return "\n".join(
+        [
+            f"⚠️ <b>Выплата не прошла</b> · {label}",
+            f"👤 {user_line} · <code>{int(telegram_id)}</code>",
+            f"💰 Сумма: <b>{amount} USDT</b>",
+            f"📦 Выплата #{int(payout_id)}",
+            f"❗️ {err}",
+        ]
+    )
+
+
+def format_unmatched_ops_html(
+    *,
+    amount_minor: int,
+    chain_deposit_id: int,
+    tx_hash: str,
+    explorer_template: str = "https://bscscan.com/tx/{tx_hash}",
+) -> str:
+    amount = html.escape(minor_to_text(int(amount_minor)))
+    clean_tx = str(tx_hash).strip()
+    url = html.escape(explorer_tx_url(explorer_template, clean_tx))
+    return "\n".join(
+        [
+            "❓ <b>Несопоставленный депозит</b>",
+            f"💰 Сумма: <b>{amount} USDT</b>",
+            f"📦 Chain deposit #{int(chain_deposit_id)}",
+            f'🔗 <a href="{url}">Транзакция</a>',
+        ]
+    )
+
+
+def format_ops_test_html(
+    *, source: str, chat_id: int, topic_id: int | None
+) -> str:
+    topic = "—" if topic_id is None else str(int(topic_id))
+    return "\n".join(
+        [
+            "🧪 <b>Ops-чат: тест</b>",
+            f"Источник: {html.escape(str(source))}",
+            f"Chat: <code>{int(chat_id)}</code>",
+            f"Topic: <code>{html.escape(topic)}</code>",
+        ]
+    )
+
+
 def env_ops_chat_id(settings: Settings) -> int | None:
     chat_id = settings.ops_chat_id
     if chat_id is None and settings.log_channel_id is not None:

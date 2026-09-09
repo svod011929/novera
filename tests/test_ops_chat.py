@@ -9,7 +9,10 @@ from delta_backend.api_settings import MiniAppSettings
 from delta_backend.repository import DeltaRepository
 from delta_backend.services.ops_chat import (
     format_deposit_ops_html,
+    format_failed_payout_ops_html,
+    format_ops_test_html,
     format_payout_ops_html,
+    format_unmatched_ops_html,
     format_user_line,
     payout_kind_label,
 )
@@ -72,6 +75,45 @@ def test_payout_kind_labels() -> None:
     assert payout_kind_label("referral", None) == "партнёрский вывод"
     assert payout_kind_label("daily", "principal") == "возврат тела"
     assert payout_kind_label("daily", "") == "дневная"
+
+
+def test_format_failed_payout_escapes_and_truncates_error() -> None:
+    text = format_failed_payout_ops_html(
+        telegram_id=7,
+        username="bob",
+        first_name=None,
+        amount_minor=usdt_to_minor("2"),
+        payout_id=55,
+        kind="daily",
+        subtype=None,
+        error="<boom>" + ("x" * 300),
+    )
+    assert "Выплата не прошла" in text
+    assert "@bob" in text
+    assert "Выплата #55" in text
+    assert "<boom>" not in text
+    assert "&lt;boom&gt;" in text
+    assert len([line for line in text.splitlines() if line.startswith("❗️")][0]) < 220
+
+
+def test_format_unmatched_includes_explorer() -> None:
+    text = format_unmatched_ops_html(
+        amount_minor=usdt_to_minor("10"),
+        chain_deposit_id=3,
+        tx_hash="0xabc",
+    )
+    assert "Несопоставленный депозит" in text
+    assert "Chain deposit #3" in text or "Chain deposit #3" in text.replace(" ", "")
+    assert "bscscan.com/tx/0xabc" in text
+    assert "админ" not in text.lower()
+
+
+def test_format_ops_test_html() -> None:
+    text = format_ops_test_html(source="database", chat_id=-1001, topic_id=42)
+    assert "Ops-чат: тест" in text
+    assert "database" in text
+    assert "-1001" in text
+    assert "42" in text
 
 
 @pytest.mark.asyncio
