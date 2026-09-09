@@ -513,6 +513,10 @@
       setPayoutWalletBeforeDeposit:'Сначала сохраните кошелёк для выплат выше — без него заявку создать нельзя.',
       networkWarningText:'Отправляйте только USDT BEP-20 на показанный адрес и ровно ту сумму, которую сформировала заявка — включая уникальный хвост. Другая сеть или другая сумма не будут зачислены.',
       invoiceStatus:'Статус заявки',invoicePending:'Ожидает перевод',invoiceExpired:'Срок истёк',invoiceReused:'Повтор той же заявки',
+      invoiceAmountMismatch:'Перевод найден, но сумма не совпала',
+      invoiceAmountMismatchDetail:'Ожидали {expected} USDT, в сети {observed} USDT. Нужна точная сумма с хвостом.',
+      invoiceAmountMismatchSupport:'Написать в поддержку',
+      invoiceExpiredHint:'Срок заявки истёк. Если перевод уже отправлен — проверьте точную сумму или напишите в поддержку.',
       invoiceExactTitle:'Точная сумма к отправке',invoiceTailHint:'Сумма содержит уникальный хвост для сопоставления платежа. Отправьте её один в один.',
       invoiceAddressTitle:'Адрес казны',invoiceToken:'Токен',invoiceChainId:'Chain ID',
       invoiceCountdown:'Осталось',invoiceMinutes:'мин',invoiceSeconds:'сек',
@@ -526,6 +530,10 @@
       setPayoutWalletBeforeDeposit:'Save a payout wallet above first — an invoice cannot be created without it.',
       networkWarningText:'Send only USDT BEP-20 to the shown address for the exact invoice amount, including the unique fractional tail. Another network or amount will not credit.',
       invoiceStatus:'Invoice status',invoicePending:'Awaiting transfer',invoiceExpired:'Expired',invoiceReused:'Same invoice reused',
+      invoiceAmountMismatch:'Transfer found, but the amount did not match',
+      invoiceAmountMismatchDetail:'Expected {expected} USDT, on-chain {observed} USDT. Exact amount with the matching tail is required.',
+      invoiceAmountMismatchSupport:'Contact support',
+      invoiceExpiredHint:'This invoice has expired. If you already sent a transfer — check the exact amount or contact support.',
       invoiceExactTitle:'Exact amount to send',invoiceTailHint:'The amount includes a unique matching tail. Send it exactly as shown.',
       invoiceAddressTitle:'Treasury address',invoiceToken:'Token',invoiceChainId:'Chain ID',
       invoiceCountdown:'Time left',invoiceMinutes:'min',invoiceSeconds:'sec',
@@ -539,6 +547,10 @@
       setPayoutWalletBeforeDeposit:'Спочатку збережіть гаманець для виплат вище — без нього заявку створити не можна.',
       networkWarningText:'Надсилайте лише USDT BEP-20 на показану адресу і рівно ту суму, яку сформувала заявка — включно з унікальним хвостом. Інша мережа або сума не будуть зараховані.',
       invoiceStatus:'Статус заявки',invoicePending:'Очікує переказ',invoiceExpired:'Термін минув',invoiceReused:'Повтор тієї ж заявки',
+      invoiceAmountMismatch:'Переказ знайдено, але сума не збіглася',
+      invoiceAmountMismatchDetail:'Очікували {expected} USDT, у мережі {observed} USDT. Потрібна точна сума з хвостом.',
+      invoiceAmountMismatchSupport:'Написати в підтримку',
+      invoiceExpiredHint:'Термін заявки минув. Якщо переказ уже надіслано — перевірте точну суму або напишіть у підтримку.',
       invoiceExactTitle:'Точна сума до відправки',invoiceTailHint:'Сума містить унікальний хвіст для зіставлення платежу. Надішліть її один в один.',
       invoiceAddressTitle:'Адреса казни',invoiceToken:'Токен',invoiceChainId:'Chain ID',
       invoiceCountdown:'Залишилось',invoiceMinutes:'хв',invoiceSeconds:'сек',
@@ -1614,17 +1626,29 @@
     if(status.effective_principal_usdt!=null) next.effective_principal_usdt=status.effective_principal_usdt;
     next.deposit_id=status.deposit_id;
     next.credited=Boolean(status.credited);
+    next.mismatch_hint=Boolean(status.mismatch_hint);
+    next.mismatch=status.mismatch||null;
     return next;
   }
-  function invoiceUiPhase(invoice){
+  function invoiceIsTimeExpired(invoice){
     const now=Math.floor(Date.now()/1000);
     const expiresAt=Number(invoice&&invoice.expires_at||0);
     const status=String(invoice&&invoice.status||'pending');
+    return status==='expired' || (expiresAt>0 && expiresAt<=now);
+  }
+  function invoiceUiPhase(invoice){
+    const status=String(invoice&&invoice.status||'pending');
     if(invoice&&invoice.credited) return 'credited';
     if(status==='paid') return 'credited';
-    if(status==='expired' || (expiresAt>0 && expiresAt<=now)) return 'expired';
+    if(invoice&&invoice.mismatch_hint && !invoice.credited) return 'amount_mismatch';
+    if(invoiceIsTimeExpired(invoice)) return 'expired';
     if(state.invoicePollInFlight) return 'detecting';
     return 'awaiting';
+  }
+  function invoicePollTerminal(invoice){
+    const phase=invoiceUiPhase(invoice);
+    if(phase==='credited' || phase==='expired') return true;
+    return phase==='amount_mismatch' && invoiceIsTimeExpired(invoice);
   }
   function updateInvoiceStatusUi(invoice){
     const box=$('invoiceBox'); if(!box||!invoice) return;
@@ -1632,14 +1656,36 @@
     const statusStrong=box.querySelector('[data-invoice-status]');
     const liveStrong=box.querySelector('[data-invoice-live]');
     const assetsBtn=box.querySelector('[data-invoice-assets]');
+    const hintEl=box.querySelector('[data-invoice-hint]');
+    const supportBtn=box.querySelector('[data-invoice-support]');
     let statusLabel=tr('invoicePending');
     let statusClass='queued';
     let liveLabel=tr('invoicePending');
+    let hintText='';
+    let showSupport=false;
     if(phase==='detecting'){ statusLabel=tr('invoiceDetecting'); statusClass='queued'; liveLabel=tr('invoiceDetecting'); }
     else if(phase==='credited'){ statusLabel=tr('invoiceCredited'); statusClass='confirmed'; liveLabel=tr('invoiceCredited'); }
-    else if(phase==='expired'){ statusLabel=tr('invoiceExpired'); statusClass='failed'; liveLabel=tr('invoiceExpired'); }
+    else if(phase==='amount_mismatch'){
+      statusLabel=tr('invoiceAmountMismatch');
+      statusClass='failed';
+      liveLabel=tr('invoiceAmountMismatch');
+      const mm=invoice.mismatch||{};
+      const expected=mm.expected_amount!=null?String(mm.expected_amount):String(invoice.exact_amount||'');
+      const observed=mm.observed_amount!=null?String(mm.observed_amount):'—';
+      hintText=tr('invoiceAmountMismatchDetail').replace('{expected}',expected).replace('{observed}',observed);
+      showSupport=true;
+    }
+    else if(phase==='expired'){
+      statusLabel=tr('invoiceExpired');
+      statusClass='failed';
+      liveLabel=tr('invoiceExpired');
+      hintText=tr('invoiceExpiredHint');
+      showSupport=true;
+    }
     if(statusStrong){ statusStrong.textContent=statusLabel; statusStrong.className=`tag ${statusClass}`; }
     if(liveStrong) liveStrong.textContent=liveLabel;
+    if(hintEl){ hintEl.textContent=hintText; hintEl.classList.toggle('hidden', !hintText); }
+    if(supportBtn) supportBtn.classList.toggle('hidden', !showSupport);
     if(assetsBtn) assetsBtn.classList.toggle('hidden', phase!=='credited');
   }
   async function pollActiveInvoice({manual=false}={}){
@@ -1648,8 +1694,7 @@
     if(!invoiceId) return;
     if(document.visibilityState==='hidden' && !manual) return;
     if(state.invoicePollInFlight) return;
-    const phase=invoiceUiPhase(invoice);
-    if(phase==='credited' || phase==='expired'){
+    if(invoicePollTerminal(invoice)){
       stopInvoicePoll();
       updateInvoiceStatusUi(invoice);
       return;
@@ -1668,7 +1713,7 @@
         stopInvoiceTimer();
         toast(tr('invoiceCredited'),'success');
         try{ await refreshBootstrap(); }catch(_){}
-      } else if(nextPhase==='expired'){
+      } else if(invoicePollTerminal(next)){
         stopInvoicePoll();
         stopInvoiceTimer();
       }
@@ -1683,8 +1728,7 @@
     stopInvoicePoll();
     const invoiceId=invoiceNumericId(invoice);
     if(!invoiceId) return;
-    const phase=invoiceUiPhase(invoice);
-    if(phase==='credited' || phase==='expired') return;
+    if(invoicePollTerminal(invoice)) return;
     state.invoicePollTimer=setInterval(()=>pollActiveInvoice(),6000);
     setTimeout(()=>pollActiveInvoice(),1200);
   }
@@ -1731,6 +1775,7 @@
       </div>
       ${reusedNote}
       <div class="invoice-line"><span>${esc(tr('invoiceStatus'))}</span><strong data-invoice-live>${esc(tr('invoicePending'))}</strong></div>
+      <p class="invoice-reused hidden" data-invoice-hint></p>
       <div class="invoice-hero-amount">
         <span>${esc(tr('invoiceExactTitle'))}</span>
         <strong class="money">${esc(amountLabel)}</strong>
@@ -1747,6 +1792,7 @@
         <button type="button" class="touch-target" data-copy-invoice="address">${esc(tr('copyAddress'))}</button>
         <button type="button" class="touch-target" data-copy-invoice="all">${esc(tr('copyAll'))}</button>
         <button type="button" class="touch-target" data-invoice-refresh>${esc(tr('invoiceRefresh'))}</button>
+        <button type="button" class="touch-target hidden" data-invoice-support>${esc(tr('invoiceAmountMismatchSupport'))}</button>
         <button type="button" class="touch-target hidden" data-invoice-assets>${esc(tr('invoiceOpenAssets'))}</button>
       </div>`;
     box.querySelectorAll('[data-copy-invoice]').forEach((b)=>b.addEventListener('click',()=>{
@@ -1757,6 +1803,11 @@
     }));
     const refreshBtn=box.querySelector('[data-invoice-refresh]');
     if(refreshBtn) refreshBtn.addEventListener('click',()=>pollActiveInvoice({manual:true}));
+    const supportBtn=box.querySelector('[data-invoice-support]');
+    if(supportBtn) supportBtn.addEventListener('click',()=>{
+      const url=state.data&&state.data.support_url;
+      if(url) window.open(url,'_blank','noopener');
+    });
     const assetsBtn=box.querySelector('[data-invoice-assets]');
     if(assetsBtn) assetsBtn.addEventListener('click',()=>switchView('assets',{push:true}));
     stopInvoiceTimer();
