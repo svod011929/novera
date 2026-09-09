@@ -1,19 +1,76 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import time
+from urllib.parse import urlencode
 
 import pytest
 
+httpx = pytest.importorskip("httpx")
+
 from delta_backend.amounts import usdt_to_minor
+from delta_backend.api import SlidingWindowRateLimiter, app
 from delta_backend.api_settings import MiniAppSettings
+from delta_backend.config import Settings
 from delta_backend.repository import DeltaRepository, RepositoryError
 
 
+TOKEN = "123456:TEST_TOKEN"
 ADMIN_ID = 900
 USER_ID = 100
 USER_WALLET = "0x0000000000000000000000000000000000000001"
 SENDER_WALLET = "0x0000000000000000000000000000000000000002"
 TREASURY_WALLET = "0x0000000000000000000000000000000000000003"
+TREASURY = "0x00000000000000000000000000000000000001"
+
+
+def signed_init_data(*, user_id: int = ADMIN_ID, username: str = "admin") -> str:
+    values = {
+        "auth_date": str(int(time.time())),
+        "query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
+        "signature": "telegram-third-party-signature",
+        "user": json.dumps(
+            {
+                "id": user_id,
+                "first_name": f"User {user_id}",
+                "username": username,
+                "language_code": "ru",
+            },
+            separators=(",", ":"),
+        ),
+    }
+    check = "\n".join(f"{key}={values[key]}" for key in sorted(values))
+    secret = hmac.new(b"WebAppData", TOKEN.encode(), hashlib.sha256).digest()
+    values["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    return urlencode(values)
+
+
+async def _prepare_api(tmp_path) -> DeltaRepository:
+    business = MiniAppSettings(_env_file=None, demo_mode=False, force_https=False)
+    chain = Settings(
+        _env_file=None,
+        bot_token=TOKEN,
+        admin_ids=str(ADMIN_ID),
+        environment="testnet",
+        chain_enabled=False,
+        simulate_payouts=True,
+        treasury_address=TREASURY,
+    )
+    chain.chain_enabled = True
+    repository = DeltaRepository(tmp_path / "deposit-recovery-api.sqlite3", business)
+    await repository.connect()
+    await repository.ensure_user(ADMIN_ID, "admin", "Admin", "ru")
+    await repository.ensure_user(USER_ID, "member", "Member", "ru")
+    await repository.set_wallet(USER_ID, USER_WALLET)
+
+    app.state.chain_settings = chain
+    app.state.business = business
+    app.state.repository = repository
+    app.state.rate_limiter = SlidingWindowRateLimiter()
+    app.state.chain_setup = None
+    return repository
 
 
 async def _repo(tmp_path) -> DeltaRepository:
@@ -504,5 +561,165 @@ async def test_list_unmatched_chain_deposits_is_newest_first_and_serializes_amou
             usdt_to_minor("1.25"),
         ]
         assert all(int(row["matched"]) == 0 for row in rows)
+    finally:
+        await repository.close()
+
+
+@pytest.mark.asyncio
+async def test_admin_chain_deposit_routes_reject_non_admin(tmp_path) -> None:
+    repository = await _prepare_api(tmp_path)
+    headers = {"X-Telegram-Init-Data": signed_init_data(user_id=USER_ID, username="member")}
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            assert (
+                await client.get(
+                    "/api/admin/chain-deposits?matched=0&limit=50",
+                    headers=headers,
+                )
+            ).status_code == 403
+            assert (
+                await client.post(
+                    "/api/admin/chain-deposits/1/match",
+                    headers=headers,
+                    json={"invoice_id": 1, "reason": "manual recovery"},
+                )
+            ).status_code == 403
+    finally:
+        await repository.close()
+
+
+@pytest.mark.asyncio
+async def test_admin_lists_unmatched_chain_deposits(tmp_path) -> None:
+    repository = await _prepare_api(tmp_path)
+    headers = {"X-Telegram-Init-Data": signed_init_data()}
+    try:
+        older_id = await _insert_unmatched(
+            repository,
+            usdt_to_minor("10"),
+            log_index=20,
+        )
+        newer_id = await _insert_unmatched(
+            repository,
+            usdt_to_minor("25.5"),
+            log_index=21,
+        )
+        matched_id = await _insert_unmatched(
+            repository,
+            usdt_to_minor("99"),
+            log_index=22,
+        )
+        async with repository.transaction() as connection:
+            await connection.execute(
+                "UPDATE chain_deposits SET matched = 1 WHERE id = ?",
+                (matched_id,),
+            )
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            response = await client.get(
+                "/api/admin/chain-deposits?matched=0&limit=50",
+                headers=headers,
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert set(payload.keys()) == {"items"}
+        ids = [int(item["id"]) for item in payload["items"]]
+        assert ids == [newer_id, older_id]
+        assert matched_id not in ids
+        assert payload["items"][0]["amount"] == "25.5"
+    finally:
+        await repository.close()
+
+
+@pytest.mark.asyncio
+async def test_admin_match_chain_deposit_http_success_and_conflicts(tmp_path) -> None:
+    repository = await _prepare_api(tmp_path)
+    headers = {"X-Telegram-Init-Data": signed_init_data()}
+    try:
+        invoice = await _create_invoice(repository)
+        paid_invoice = await _create_invoice(repository, amount="50")
+        await repository.admin_match_chain_deposit(
+            await _insert_unmatched(
+                repository,
+                usdt_to_minor("50"),
+                log_index=30,
+            ),
+            int(paid_invoice["invoice_id"]),
+            admin_id=ADMIN_ID,
+            reason="seed paid invoice for conflict",
+        )
+        chain_deposit_id = await _insert_unmatched(
+            repository,
+            usdt_to_minor("100"),
+            log_index=31,
+        )
+        conflict_id = await _insert_unmatched(
+            repository,
+            usdt_to_minor("40"),
+            log_index=32,
+        )
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+            ok = await client.post(
+                f"/api/admin/chain-deposits/{chain_deposit_id}/match",
+                headers=headers,
+                json={
+                    "invoice_id": int(invoice["invoice_id"]),
+                    "reason": "  Customer receipt matched manually  ",
+                },
+            )
+            assert ok.status_code == 200
+            body = ok.json()
+            assert body["chain_deposit_id"] == chain_deposit_id
+            assert body["invoice_id"] == int(invoice["invoice_id"])
+            assert body["principal_minor"] == usdt_to_minor("100")
+            assert body["bonus_minor"] == 0
+            assert body["reused"] is False
+            assert "deposit_id" in body
+            assert body["tx_hash"] == _tx_hash(31)
+
+            double = await client.post(
+                f"/api/admin/chain-deposits/{chain_deposit_id}/match",
+                headers=headers,
+                json={
+                    "invoice_id": int(invoice["invoice_id"]),
+                    "reason": "retry after success",
+                },
+            )
+            assert double.status_code == 409
+
+            paid = await client.post(
+                f"/api/admin/chain-deposits/{conflict_id}/match",
+                headers=headers,
+                json={
+                    "invoice_id": int(paid_invoice["invoice_id"]),
+                    "reason": "already paid invoice",
+                },
+            )
+            assert paid.status_code == 409
+
+            missing_chain = await client.post(
+                "/api/admin/chain-deposits/999999/match",
+                headers=headers,
+                json={"invoice_id": int(invoice["invoice_id"]), "reason": "missing chain"},
+            )
+            assert missing_chain.status_code == 404
+
+            missing_invoice = await client.post(
+                f"/api/admin/chain-deposits/{conflict_id}/match",
+                headers=headers,
+                json={"invoice_id": 999999, "reason": "missing invoice"},
+            )
+            assert missing_invoice.status_code == 404
+
+            blank_reason = await client.post(
+                f"/api/admin/chain-deposits/{conflict_id}/match",
+                headers=headers,
+                json={"invoice_id": int(invoice["invoice_id"]), "reason": "   "},
+            )
+            assert blank_reason.status_code == 422
     finally:
         await repository.close()

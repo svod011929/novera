@@ -260,6 +260,20 @@ class AdminCloseInvestmentRequest(BaseModel):
             raise ValueError("Invalid investment operation ID")
         return clean
 
+
+class ChainDepositMatchRequest(BaseModel):
+    invoice_id: int
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _reason(cls, value: str) -> str:
+        clean = value.strip()
+        if not clean:
+            raise ValueError("Reason is required")
+        return clean[:500]
+
+
 class AdminTestPayoutRequest(BaseModel):
     address: str = Field(min_length=42, max_length=42)
     amount: Decimal = Field(ge=Decimal("1"), le=Decimal("1000000000000"))
@@ -2244,6 +2258,46 @@ async def admin_deposits(
 ) -> list[dict[str, object]]:
     repository: DeltaRepository = request.app.state.repository
     return await repository.admin_deposits(deposit_status)
+
+
+@app.get("/api/admin/chain-deposits")
+async def admin_chain_deposits(
+    request: Request,
+    matched: int = Query(default=0, ge=0, le=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    _user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, list[dict[str, object]]]:
+    if matched != 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Only unmatched chain deposits (matched=0) are supported",
+        )
+    repository: DeltaRepository = request.app.state.repository
+    items = await repository.list_unmatched_chain_deposits(limit=limit)
+    return {"items": items}
+
+
+@app.post("/api/admin/chain-deposits/{chain_deposit_id}/match")
+async def admin_match_chain_deposit(
+    chain_deposit_id: int,
+    payload: ChainDepositMatchRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "chain-deposit-match")
+    repository: DeltaRepository = request.app.state.repository
+    try:
+        return await repository.admin_match_chain_deposit(
+            chain_deposit_id,
+            payload.invoice_id,
+            admin_id=user.telegram_id,
+            reason=payload.reason,
+        )
+    except RepositoryError as exc:
+        detail = str(exc)
+        if detail in {"Chain deposit not found", "Invoice not found"}:
+            raise HTTPException(status_code=404, detail=detail) from exc
+        raise HTTPException(status_code=409, detail=detail) from exc
 
 
 @app.get("/api/admin/operations")
