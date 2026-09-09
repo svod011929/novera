@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+
 import pytest
 
 from delta_backend.amounts import usdt_to_minor
 from delta_backend.api_settings import MiniAppSettings
+from delta_backend.models import TransferEvent
 from delta_backend.repository import DeltaRepository
 from delta_backend.services.ops_chat import (
     format_deposit_ops_html,
@@ -158,5 +162,103 @@ async def test_ops_chat_settings_db_overrides_env(tmp_path) -> None:
         )
         assert cleared["source"] == "env"
         assert cleared["chat_id"] == -100111
+    finally:
+        await repository.close()
+
+
+class RecordingOpsNotifier:
+    def __init__(self) -> None:
+        self.failed_payouts: list[dict[str, object]] = []
+        self.unmatched: list[dict[str, object]] = []
+
+    async def notify_failed_payout(self, **kwargs: object) -> None:
+        self.failed_payouts.append(kwargs)
+
+    async def notify_unmatched(self, **kwargs: object) -> None:
+        self.unmatched.append(kwargs)
+
+
+@pytest.mark.asyncio
+async def test_mark_payout_failed_schedules_ops_once(tmp_path) -> None:
+    business = MiniAppSettings(_env_file=None, demo_mode=False, force_https=False)
+    repository = DeltaRepository(tmp_path / "ops-failed.sqlite3", business)
+    notifier = RecordingOpsNotifier()
+    repository.set_ops_chat_notifier(notifier)
+    await repository.connect()
+    now = int(time.time())
+    try:
+        await repository.ensure_user(77, "failed_user", "Failed", "ru")
+        async with repository.transaction() as connection:
+            cursor = await connection.execute(
+                """
+                INSERT INTO payouts(
+                    idempotency_key, user_id, kind, subtype, admin_test,
+                    amount_minor, address, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "failed-payout-once",
+                    77,
+                    "daily",
+                    "",
+                    0,
+                    usdt_to_minor("2"),
+                    "0x0000000000000000000000000000000000000001",
+                    "queued",
+                    now,
+                    now,
+                ),
+            )
+            payout_id = int(cursor.lastrowid)
+
+        await repository.mark_payout_failed(payout_id, "boom")
+        await repository.mark_payout_failed(payout_id, "boom again")
+        await asyncio.sleep(0)
+
+        assert len(notifier.failed_payouts) == 1
+        assert notifier.failed_payouts[0] == {
+            "telegram_id": 77,
+            "username": "failed_user",
+            "first_name": "Failed",
+            "amount_minor": usdt_to_minor("2"),
+            "payout_id": payout_id,
+            "kind": "daily",
+            "subtype": "",
+            "error": "boom",
+        }
+    finally:
+        await repository.close()
+
+
+@pytest.mark.asyncio
+async def test_apply_transfer_schedules_unmatched_once_and_duplicate_silent(tmp_path) -> None:
+    business = MiniAppSettings(_env_file=None, demo_mode=False, force_https=False)
+    repository = DeltaRepository(tmp_path / "ops-unmatched.sqlite3", business)
+    notifier = RecordingOpsNotifier()
+    repository.set_ops_chat_notifier(notifier)
+    await repository.connect()
+    transfer = TransferEvent(
+        chain_id=97,
+        tx_hash="0xabc",
+        log_index=5,
+        block_number=105,
+        from_address="0x0000000000000000000000000000000000000002",
+        to_address="0x0000000000000000000000000000000000000001",
+        amount_atomic=usdt_to_minor("10") * 10**12,
+        amount_minor=usdt_to_minor("10"),
+    )
+    try:
+        first = await repository.apply_transfer(transfer)
+        duplicate = await repository.apply_transfer(transfer)
+        await asyncio.sleep(0)
+
+        assert first == {"duplicate": False, "matched": False}
+        assert duplicate == {"duplicate": True, "matched": False}
+        assert len(notifier.unmatched) == 1
+        assert notifier.unmatched[0] == {
+            "amount_minor": usdt_to_minor("10"),
+            "chain_deposit_id": 1,
+            "tx_hash": "0xabc",
+        }
     finally:
         await repository.close()

@@ -653,6 +653,66 @@ class DeltaRepository:
             )
         )
 
+    def _schedule_ops_failed_payout(
+        self,
+        *,
+        telegram_id: int,
+        username: str | None,
+        first_name: str | None,
+        amount_minor: int,
+        payout_id: int,
+        kind: str,
+        subtype: str | None = None,
+        error: str,
+    ) -> None:
+        notifier = self._ops_chat_notifier
+        if notifier is None:
+            return
+        notify = getattr(notifier, "notify_failed_payout", None)
+        if notify is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(
+            notify(
+                telegram_id=telegram_id,
+                username=username,
+                first_name=first_name,
+                amount_minor=amount_minor,
+                payout_id=payout_id,
+                kind=kind,
+                subtype=subtype,
+                error=error,
+            )
+        )
+
+    def _schedule_ops_unmatched(
+        self,
+        *,
+        amount_minor: int,
+        chain_deposit_id: int,
+        tx_hash: str,
+    ) -> None:
+        notifier = self._ops_chat_notifier
+        if notifier is None:
+            return
+        notify = getattr(notifier, "notify_unmatched", None)
+        if notify is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(
+            notify(
+                amount_minor=amount_minor,
+                chain_deposit_id=chain_deposit_id,
+                tx_hash=tx_hash,
+            )
+        )
+
     async def connect(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = await aiosqlite.connect(self.path)
@@ -2820,7 +2880,9 @@ class DeltaRepository:
     async def apply_transfer(self, transfer: TransferEvent) -> dict[str, object]:
         now = int(time.time())
         ops_deposit: dict[str, object] | None = None
+        ops_unmatched: dict[str, object] | None = None
         matched_result: dict[str, object] | None = None
+        unmatched_result: dict[str, object] | None = None
         async with self.transaction() as connection:
             try:
                 cursor = await connection.execute(
@@ -2867,206 +2929,215 @@ class DeltaRepository:
                     "VALUES ('unmatched_deposit', ?, ?)",
                     (f"{transfer.tx_hash}:{transfer.log_index}", now),
                 )
-                return {"duplicate": False, "matched": False}
-
-            await connection.execute(
-                """
-                UPDATE deposit_invoices
-                SET status = 'paid', tx_hash = ?, paid_at = ?
-                WHERE id = ? AND status = 'pending'
-                """,
-                (transfer.tx_hash, now, invoice["id"]),
-            )
-            await connection.execute(
-                "UPDATE chain_deposits SET invoice_id = ?, matched = 1 WHERE id = ?",
-                (invoice["id"], chain_deposit_id),
-            )
-
-            bonus_minor = 0
-            promo_code_id = invoice["promo_code_id"]
-            promo_code_id = int(promo_code_id) if promo_code_id is not None else None
-            skipped_promo_code_id = promo_code_id
-            promo_skip_reason: str | None = None
-            if promo_code_id is not None:
-                bonus_minor, promo_skip_reason = await self._reserve_promo_redemption(
-                    connection,
-                    promo_code_id=promo_code_id,
-                    user_id=int(invoice["user_id"]),
-                    base_minor=int(invoice["base_minor"]),
-                    now=now,
+                ops_unmatched = {
+                    "amount_minor": int(transfer.amount_minor),
+                    "chain_deposit_id": int(chain_deposit_id),
+                    "tx_hash": str(transfer.tx_hash),
+                }
+                unmatched_result = {"duplicate": False, "matched": False}
+            else:
+                await connection.execute(
+                    """
+                    UPDATE deposit_invoices
+                    SET status = 'paid', tx_hash = ?, paid_at = ?
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (transfer.tx_hash, now, invoice["id"]),
                 )
+                await connection.execute(
+                    "UPDATE chain_deposits SET invoice_id = ?, matched = 1 WHERE id = ?",
+                    (invoice["id"], chain_deposit_id),
+                )
+
+                bonus_minor = 0
+                promo_code_id = invoice["promo_code_id"]
+                promo_code_id = int(promo_code_id) if promo_code_id is not None else None
+                skipped_promo_code_id = promo_code_id
+                promo_skip_reason: str | None = None
+                if promo_code_id is not None:
+                    bonus_minor, promo_skip_reason = await self._reserve_promo_redemption(
+                        connection,
+                        promo_code_id=promo_code_id,
+                        user_id=int(invoice["user_id"]),
+                        base_minor=int(invoice["base_minor"]),
+                        now=now,
+                    )
+                    if promo_skip_reason is not None:
+                        bonus_minor = 0
+                        promo_code_id = None
+
+                principal_minor = int(transfer.amount_minor) + bonus_minor
+
+                cursor = await connection.execute(
+                    """
+                    INSERT INTO deposits(
+                        user_id, invoice_id, principal_minor, payout_address,
+                        next_payout_at, opened_at, bonus_minor, promo_code_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        invoice["user_id"],
+                        invoice["id"],
+                        principal_minor,
+                        invoice["payout_address"],
+                        now + 86_400,
+                        now,
+                        bonus_minor,
+                        promo_code_id,
+                    ),
+                )
+                deposit_id = int(cursor.lastrowid)
+
+                if promo_code_id is not None:
+                    try:
+                        await connection.execute(
+                            """
+                            INSERT INTO promo_redemptions(
+                                promo_code_id, user_id, deposit_id, invoice_id,
+                                bonus_minor, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                promo_code_id,
+                                int(invoice["user_id"]),
+                                deposit_id,
+                                int(invoice["id"]),
+                                bonus_minor,
+                                now,
+                            ),
+                        )
+                    except aiosqlite.IntegrityError:
+                        # Give the reserved slot back and strip the bonus instead of
+                        # rolling back the credited transfer.
+                        await connection.execute(
+                            "UPDATE promo_codes SET redemption_count = redemption_count - 1 "
+                            "WHERE id = ? AND redemption_count > 0",
+                            (promo_code_id,),
+                        )
+                        await connection.execute(
+                            "UPDATE deposits SET principal_minor = ?, bonus_minor = 0, "
+                            "promo_code_id = NULL WHERE id = ?",
+                            (int(transfer.amount_minor), deposit_id),
+                        )
+                        principal_minor = int(transfer.amount_minor)
+                        bonus_minor = 0
+                        promo_code_id = None
+                        promo_skip_reason = "promo_redemption_conflict"
+
                 if promo_skip_reason is not None:
-                    bonus_minor = 0
-                    promo_code_id = None
-
-            principal_minor = int(transfer.amount_minor) + bonus_minor
-
-            cursor = await connection.execute(
-                """
-                INSERT INTO deposits(
-                    user_id, invoice_id, principal_minor, payout_address,
-                    next_payout_at, opened_at, bonus_minor, promo_code_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    invoice["user_id"],
-                    invoice["id"],
-                    principal_minor,
-                    invoice["payout_address"],
-                    now + 86_400,
-                    now,
-                    bonus_minor,
-                    promo_code_id,
-                ),
-            )
-            deposit_id = int(cursor.lastrowid)
-
-            if promo_code_id is not None:
-                try:
                     await connection.execute(
-                        """
-                        INSERT INTO promo_redemptions(
-                            promo_code_id, user_id, deposit_id, invoice_id,
-                            bonus_minor, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                        """,
+                        "INSERT INTO audit_events(event_type, details, created_at) "
+                        "VALUES ('promo_redeem_skipped', ?, ?)",
                         (
-                            promo_code_id,
-                            int(invoice["user_id"]),
-                            deposit_id,
-                            int(invoice["id"]),
-                            bonus_minor,
+                            f"deposit={deposit_id};invoice={int(invoice['id'])};"
+                            f"promo={skipped_promo_code_id};reason={promo_skip_reason}",
                             now,
                         ),
                     )
-                except aiosqlite.IntegrityError:
-                    # Give the reserved slot back and strip the bonus instead of
-                    # rolling back the credited transfer.
-                    await connection.execute(
-                        "UPDATE promo_codes SET redemption_count = redemption_count - 1 "
-                        "WHERE id = ? AND redemption_count > 0",
-                        (promo_code_id,),
-                    )
-                    await connection.execute(
-                        "UPDATE deposits SET principal_minor = ?, bonus_minor = 0, "
-                        "promo_code_id = NULL WHERE id = ?",
-                        (int(transfer.amount_minor), deposit_id),
-                    )
-                    principal_minor = int(transfer.amount_minor)
-                    bonus_minor = 0
-                    promo_code_id = None
-                    promo_skip_reason = "promo_redemption_conflict"
 
-            if promo_skip_reason is not None:
                 await connection.execute(
                     "INSERT INTO audit_events(event_type, details, created_at) "
-                    "VALUES ('promo_redeem_skipped', ?, ?)",
-                    (
-                        f"deposit={deposit_id};invoice={int(invoice['id'])};"
-                        f"promo={skipped_promo_code_id};reason={promo_skip_reason}",
-                        now,
-                    ),
+                    "VALUES ('deposit_opened', ?, ?)",
+                    (f"deposit={deposit_id};tx={transfer.tx_hash}", now),
                 )
-
-            await connection.execute(
-                "INSERT INTO audit_events(event_type, details, created_at) "
-                "VALUES ('deposit_opened', ?, ?)",
-                (f"deposit={deposit_id};tx={transfer.tx_hash}", now),
-            )
-            amount_text = minor_to_text(int(transfer.amount_minor))
-            principal_text = minor_to_text(principal_minor)
-            if bonus_minor > 0:
-                bonus_text = minor_to_text(bonus_minor)
-                body = (
-                    f"Зачислено {amount_text} USDT + бонус {bonus_text} USDT = "
-                    f"{principal_text} USDT. Депозит #{deposit_id} активирован."
-                )
-                telegram_html = (
-                    "✅ <b>Пополнение подтверждено</b>\n\n"
-                    f"💰 Зачислено: <b>{amount_text} USDT</b>\n"
-                    f"🎁 Бонус: <b>+{bonus_text} USDT</b>\n"
-                    f"📦 Депозит: <b>#{deposit_id}</b> на сумму <b>{principal_text} USDT</b>\n"
-                    "⏱ Первая выплата — через 24 часа."
-                )
-            else:
-                body = f"Зачислено {principal_text} USDT. Депозит #{deposit_id} активирован."
-                telegram_html = (
-                    "✅ <b>Пополнение подтверждено</b>\n\n"
-                    f"💰 Зачислено: <b>{principal_text} USDT</b>\n"
-                    f"📦 Депозит: <b>#{deposit_id}</b>\n"
-                    "⏱ Первая выплата — через 24 часа."
-                )
-            await self._queue_notification(
-                connection,
-                user_id=int(invoice["user_id"]),
-                category="deposit",
-                event_type="deposit_confirmed",
-                title="Пополнение подтверждено",
-                body=body,
-                telegram_html=telegram_html,
-                dedupe_key=f"deposit-confirmed:{deposit_id}",
-                data={
-                    "target_view": "assets",
-                    "deposit_id": deposit_id,
-                    "amount_minor": int(transfer.amount_minor),
-                    "bonus_minor": bonus_minor,
-                    "principal_minor": principal_minor,
-                    "tx_hash": str(transfer.tx_hash),
-                },
-                created_at=now,
-            )
-            if promo_skip_reason is not None:
+                amount_text = minor_to_text(int(transfer.amount_minor))
+                principal_text = minor_to_text(principal_minor)
+                if bonus_minor > 0:
+                    bonus_text = minor_to_text(bonus_minor)
+                    body = (
+                        f"Зачислено {amount_text} USDT + бонус {bonus_text} USDT = "
+                        f"{principal_text} USDT. Депозит #{deposit_id} активирован."
+                    )
+                    telegram_html = (
+                        "✅ <b>Пополнение подтверждено</b>\n\n"
+                        f"💰 Зачислено: <b>{amount_text} USDT</b>\n"
+                        f"🎁 Бонус: <b>+{bonus_text} USDT</b>\n"
+                        f"📦 Депозит: <b>#{deposit_id}</b> на сумму <b>{principal_text} USDT</b>\n"
+                        "⏱ Первая выплата — через 24 часа."
+                    )
+                else:
+                    body = f"Зачислено {principal_text} USDT. Депозит #{deposit_id} активирован."
+                    telegram_html = (
+                        "✅ <b>Пополнение подтверждено</b>\n\n"
+                        f"💰 Зачислено: <b>{principal_text} USDT</b>\n"
+                        f"📦 Депозит: <b>#{deposit_id}</b>\n"
+                        "⏱ Первая выплата — через 24 часа."
+                    )
                 await self._queue_notification(
                     connection,
                     user_id=int(invoice["user_id"]),
                     category="deposit",
-                    event_type="promo_skipped",
-                    title="Промокод не применён",
-                    body=(
-                        "Промокод к этому пополнению не применён — бонус, показанный "
-                        "в счёте, не зачислен. Депозит открыт на фактическую сумму "
-                        "перевода."
-                    ),
-                    telegram_html=(
-                        "⚠️ <b>Промокод не применён</b>\n\n"
-                        "Бонус, показанный в счёте, не зачислен — депозит открыт "
-                        "на фактическую сумму перевода."
-                    ),
-                    dedupe_key=f"deposit-promo-skipped:{deposit_id}",
+                    event_type="deposit_confirmed",
+                    title="Пополнение подтверждено",
+                    body=body,
+                    telegram_html=telegram_html,
+                    dedupe_key=f"deposit-confirmed:{deposit_id}",
                     data={
                         "target_view": "assets",
                         "deposit_id": deposit_id,
-                        "promo_skip_reason": promo_skip_reason,
+                        "amount_minor": int(transfer.amount_minor),
+                        "bonus_minor": bonus_minor,
+                        "principal_minor": principal_minor,
+                        "tx_hash": str(transfer.tx_hash),
                     },
                     created_at=now,
                 )
-            ops_deposit = {
-                "telegram_id": int(invoice["user_id"]),
-                "username": (
-                    None if invoice["username"] is None else str(invoice["username"])
-                ),
-                "first_name": (
-                    None if invoice["first_name"] is None else str(invoice["first_name"])
-                ),
-                "amount_minor": int(principal_minor),
-                "deposit_id": int(deposit_id),
-                "tx_hash": str(transfer.tx_hash),
-            }
-            matched_result = {
-                "duplicate": False,
-                "matched": True,
-                "user_id": int(invoice["user_id"]),
-                "deposit_id": deposit_id,
-                "amount_minor": transfer.amount_minor,
-                "principal_minor": principal_minor,
-                "bonus_minor": bonus_minor,
-                "promo_code_id": promo_code_id,
-                "promo_skipped_reason": promo_skip_reason,
-            }
+                if promo_skip_reason is not None:
+                    await self._queue_notification(
+                        connection,
+                        user_id=int(invoice["user_id"]),
+                        category="deposit",
+                        event_type="promo_skipped",
+                        title="Промокод не применён",
+                        body=(
+                            "Промокод к этому пополнению не применён — бонус, показанный "
+                            "в счёте, не зачислен. Депозит открыт на фактическую сумму "
+                            "перевода."
+                        ),
+                        telegram_html=(
+                            "⚠️ <b>Промокод не применён</b>\n\n"
+                            "Бонус, показанный в счёте, не зачислен — депозит открыт "
+                            "на фактическую сумму перевода."
+                        ),
+                        dedupe_key=f"deposit-promo-skipped:{deposit_id}",
+                        data={
+                            "target_view": "assets",
+                            "deposit_id": deposit_id,
+                            "promo_skip_reason": promo_skip_reason,
+                        },
+                        created_at=now,
+                    )
+                ops_deposit = {
+                    "telegram_id": int(invoice["user_id"]),
+                    "username": (
+                        None if invoice["username"] is None else str(invoice["username"])
+                    ),
+                    "first_name": (
+                        None if invoice["first_name"] is None else str(invoice["first_name"])
+                    ),
+                    "amount_minor": int(principal_minor),
+                    "deposit_id": int(deposit_id),
+                    "tx_hash": str(transfer.tx_hash),
+                }
+                matched_result = {
+                    "duplicate": False,
+                    "matched": True,
+                    "user_id": int(invoice["user_id"]),
+                    "deposit_id": deposit_id,
+                    "amount_minor": transfer.amount_minor,
+                    "principal_minor": principal_minor,
+                    "bonus_minor": bonus_minor,
+                    "promo_code_id": promo_code_id,
+                    "promo_skipped_reason": promo_skip_reason,
+                }
         if ops_deposit is not None:
             self._schedule_ops_deposit(**ops_deposit)
+        if ops_unmatched is not None:
+            self._schedule_ops_unmatched(**ops_unmatched)
         if matched_result is not None:
             return matched_result
+        if unmatched_result is not None:
+            return unmatched_result
         return {"duplicate": False, "matched": False}
 
     async def get_sync_height(self, key: str) -> int | None:
@@ -3404,8 +3475,17 @@ class DeltaRepository:
 
     async def mark_payout_failed(self, payout_id: int, error: str) -> None:
         now = int(time.time())
+        ops_failed: dict[str, object] | None = None
         async with self.transaction() as connection:
-            cursor = await connection.execute("SELECT * FROM payouts WHERE id = ?", (payout_id,))
+            cursor = await connection.execute(
+                """
+                SELECT payouts.*, users.username, users.first_name
+                FROM payouts
+                LEFT JOIN users ON users.telegram_id = payouts.user_id
+                WHERE payouts.id = ?
+                """,
+                (payout_id,),
+            )
             payout = await cursor.fetchone()
             if not payout:
                 return
@@ -3433,6 +3513,24 @@ class DeltaRepository:
                     data={"target_view": "history", "payout_id": int(payout_id)},
                     created_at=now,
                 )
+                ops_failed = {
+                    "telegram_id": int(payout["user_id"]),
+                    "username": (
+                        None if payout["username"] is None else str(payout["username"])
+                    ),
+                    "first_name": (
+                        None if payout["first_name"] is None else str(payout["first_name"])
+                    ),
+                    "amount_minor": int(payout["amount_minor"]),
+                    "payout_id": int(payout_id),
+                    "kind": str(payout["kind"] or ""),
+                    "subtype": (
+                        None if payout["subtype"] is None else str(payout["subtype"])
+                    ),
+                    "error": error[:1000],
+                }
+        if ops_failed is not None:
+            self._schedule_ops_failed_payout(**ops_failed)
 
     async def mark_payout_confirmed(self, payout_id: int, tx_hash: str) -> dict[str, object] | None:
         now = int(time.time())
