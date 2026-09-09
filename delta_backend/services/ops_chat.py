@@ -231,10 +231,14 @@ class OpsChatNotifier:
     async def close(self) -> None:
         await self.bot.session.close()
 
-    async def _send(self, text: str, *, preview: bool) -> None:
-        chat_id, topic_id = await self.resolve_target()
-        if chat_id is None:
-            return
+    async def _send_to(
+        self,
+        chat_id: int,
+        topic_id: int | None,
+        text: str,
+        *,
+        preview: bool,
+    ) -> None:
         kwargs: dict[str, Any] = {
             "chat_id": chat_id,
             "text": text,
@@ -247,18 +251,30 @@ class OpsChatNotifier:
             await self.bot.send_message(**kwargs)
         except TelegramRetryAfter as exc:
             await asyncio.sleep(min(float(exc.retry_after), 5.0))
-            try:
-                await self.bot.send_message(**kwargs)
-            except Exception as retry_exc:
-                logger.warning(
-                    "Ops chat retry failed: %s", type(retry_exc).__name__
-                )
+            await self.bot.send_message(**kwargs)
+
+    async def _send(self, text: str, *, preview: bool) -> None:
+        chat_id, topic_id = await self.resolve_target()
+        if chat_id is None:
+            return
+        try:
+            await self._send_to(chat_id, topic_id, text, preview=preview)
         except (TelegramForbiddenError, TelegramBadRequest) as exc:
             logger.warning("Ops chat rejected message: %s", type(exc).__name__)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning("Ops chat delivery failed: %s", type(exc).__name__)
+
+    async def _send_raising(
+        self,
+        chat_id: int,
+        topic_id: int | None,
+        text: str,
+        *,
+        preview: bool,
+    ) -> None:
+        await self._send_to(chat_id, topic_id, text, preview=preview)
 
     async def notify_deposit(
         self,
@@ -303,3 +319,91 @@ class OpsChatNotifier:
             explorer_template=self.settings.block_explorer_tx_url,
         )
         await self._send(text, preview=True)
+
+    async def notify_failed_payout(
+        self,
+        *,
+        telegram_id: int,
+        username: str | None,
+        first_name: str | None,
+        amount_minor: int,
+        payout_id: int,
+        kind: str,
+        subtype: str | None = None,
+        error: str = "",
+    ) -> None:
+        text = format_failed_payout_ops_html(
+            telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
+            amount_minor=amount_minor,
+            payout_id=payout_id,
+            kind=kind,
+            subtype=subtype,
+            error=error,
+        )
+        await self._send(text, preview=False)
+
+    async def notify_unmatched(
+        self,
+        *,
+        amount_minor: int,
+        chain_deposit_id: int,
+        tx_hash: str,
+    ) -> None:
+        text = format_unmatched_ops_html(
+            amount_minor=amount_minor,
+            chain_deposit_id=chain_deposit_id,
+            tx_hash=tx_hash,
+            explorer_template=self.settings.block_explorer_tx_url,
+        )
+        await self._send(text, preview=False)
+
+    async def notify_safety(self, text: str) -> None:
+        await self._send(str(text), preview=False)
+
+    async def send_test(self) -> dict[str, object]:
+        env_chat = env_ops_chat_id(self.settings)
+        env_topic = env_ops_topic_id(self.settings)
+        if self.repository is None:
+            cfg = {
+                "active": env_chat is not None,
+                "chat_id": env_chat,
+                "topic_id": env_topic,
+                "source": "env" if env_chat is not None else "none",
+            }
+        else:
+            cfg = await self.repository.get_ops_chat_settings(
+                env_chat_id=env_chat, env_topic_id=env_topic
+            )
+        if not cfg.get("active") or cfg.get("chat_id") is None:
+            return {
+                "ok": False,
+                "chat_id": None,
+                "topic_id": None,
+                "source": cfg.get("source", "none"),
+                "detail": "Ops chat is not active",
+            }
+        chat_id = int(cfg["chat_id"])
+        topic_id = None if cfg.get("topic_id") is None else int(cfg["topic_id"])
+        text = format_ops_test_html(
+            source=str(cfg.get("source") or "none"),
+            chat_id=chat_id,
+            topic_id=topic_id,
+        )
+        try:
+            await self._send_raising(chat_id, topic_id, text, preview=False)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "chat_id": chat_id,
+                "topic_id": topic_id,
+                "source": cfg.get("source"),
+                "detail": type(exc).__name__,
+            }
+        return {
+            "ok": True,
+            "chat_id": chat_id,
+            "topic_id": topic_id,
+            "source": cfg.get("source"),
+        }
