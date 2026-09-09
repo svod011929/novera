@@ -165,6 +165,9 @@
           <label class="input-label" for="depositAmount" data-i18n="amount">Сумма USDT</label>
           <div class="input-shell amount-shell"><input id="depositAmount" type="number" inputmode="decimal" min="10" step="0.01" placeholder="100"><span class="unit">USDT</span></div>
           <p id="depositRangeHint" class="field-hint"></p>
+          <label class="input-label" for="depositPromoCode" data-i18n="promoCode">Промокод</label>
+          <div class="input-shell"><input id="depositPromoCode" autocomplete="off" spellcheck="false" maxlength="32" placeholder="PROMO2026"></div>
+          <p class="field-hint" data-i18n="promoCodeOptionalHint">Необязательно. Бонус начисляется один раз при первом депозите с этим кодом.</p>
           <p id="depositWalletGate" class="field-hint deposit-gate hidden" data-i18n="setPayoutWalletBeforeDeposit">Сначала сохраните кошелёк для выплат выше — без него заявку создать нельзя.</p>
           <p id="depositChainGate" class="field-hint deposit-gate hidden" data-i18n="depositsDisabledUi">Пополнение временно недоступно</p>
           <button id="createDeposit" class="primary-btn" type="button" data-i18n="createInvoice">Создать заявку</button>
@@ -253,6 +256,7 @@
           <button class="admin-tab" data-admin-tab="deposits" type="button" data-i18n="deposits">Депозиты</button>
           <button class="admin-tab" data-admin-tab="payouts" type="button" data-i18n="payouts">Выплаты</button>
           <button class="admin-tab" data-admin-tab="broadcasts" type="button" data-i18n="broadcasts">Рассылка</button>
+          <button class="admin-tab" data-admin-tab="campaigns" type="button" data-i18n="campaignsTab">Кампании</button>
           <button class="admin-tab" data-admin-tab="admins" type="button" data-i18n="administrators">Администраторы</button>
           <button class="admin-tab" data-admin-tab="terms" type="button" data-i18n="terms">Условия</button>
           <button class="admin-tab" data-admin-tab="links" type="button" data-i18n="links">Ссылки</button>
@@ -320,6 +324,68 @@
           </article>
           <div id="adminBroadcastList" class="stack-list"></div>
         </div>
+        <div id="admin-campaigns" class="admin-section">
+          <article class="panel form-card promo-composer">
+            <div class="form-heading"><span class="form-icon">%</span><div><strong data-i18n="newPromo">Новый промокод</strong><small data-i18n="promoHint">Бонус начисляется один раз пользователю при первом депозите с этим кодом.</small></div></div>
+            <label class="input-label" for="promoCodeInput" data-i18n="promoCode">Промокод</label>
+            <div class="input-shell"><input id="promoCodeInput" autocomplete="off" spellcheck="false" maxlength="32" placeholder="PROMO2026"></div>
+            <div class="settings-grid">
+              <label class="settings-field"><span data-i18n="promoBonusType">Тип бонуса</span>
+                <select id="promoBonusType" class="select-input">
+                  <option value="percent" data-i18n="promoBonusPercent">% от депозита</option>
+                  <option value="fixed" data-i18n="promoBonusFixed">Фикс. сумма USDT</option>
+                </select>
+              </label>
+              <label class="settings-field"><span data-i18n="promoBonusValue">Значение бонуса</span><input id="promoBonusValue" class="text-input" type="number" min="0" step="0.01" placeholder="10"></label>
+              <label class="settings-field"><span data-i18n="promoMaxRedemptions">Лимит использований</span><input id="promoMaxRedemptions" class="text-input" type="number" min="1" step="1" placeholder="100"></label>
+              <label class="settings-field"><span data-i18n="promoMinDeposit">Мин. депозит, USDT</span><input id="promoMinDeposit" class="text-input" type="number" min="0" step="1" placeholder="0"></label>
+            </div>
+            <button id="createPromoBtn" class="primary-btn" type="button" data-i18n="createPromo">Создать промокод</button>
+          </article>
+          <div id="adminPromoList" class="stack-list"></div>
+
+          <article class="panel form-card campaign-composer">
+            <div class="form-heading"><span class="form-icon">⌁</span><div><strong data-i18n="newCampaign">Новая кампания</strong><small data-i18n="campaignHint">Автоматическая рассылка по расписанию с опциональным промокодом.</small></div></div>
+            <label class="input-label" for="campaignKind" data-i18n="campaignKind">Тип кампании</label>
+            <select id="campaignKind" class="select-input">
+              <option value="custom" data-i18n="campaignKindCustom">Произвольная</option>
+              <option value="promo" data-i18n="campaignKindPromo">Промокод</option>
+              <option value="partner" data-i18n="campaignKindPartner">Партнёрская</option>
+            </select>
+            <label class="input-label" for="campaignPromo" data-i18n="campaignPromoSelect">Промокод кампании</label>
+            <select id="campaignPromo" class="select-input"><option value="" data-i18n="campaignPromoNone">Без промокода</option></select>
+            <label class="input-label" for="campaignAudience" data-i18n="audience">Аудитория</label>
+            <select id="campaignAudience" class="select-input">
+              <option value="all" data-i18n="allUsers">Все пользователи</option>
+              <option value="investors" data-i18n="investors">Только инвесторы</option>
+              <option value="partners" data-i18n="partners">Только партнёры</option>
+            </select>
+            <label class="input-label" for="campaignScheduleMode" data-i18n="campaignScheduleMode">Расписание</label>
+            <select id="campaignScheduleMode" class="select-input">
+              <option value="interval" data-i18n="campaignScheduleInterval">Интервал (часы)</option>
+              <option value="weekly" data-i18n="campaignScheduleWeekly">По дням недели</option>
+            </select>
+            <div class="settings-grid">
+              <label id="campaignIntervalField" class="settings-field"><span data-i18n="campaignIntervalHours">Интервал, часов</span><input id="campaignIntervalHours" class="text-input" type="number" min="1" step="1" placeholder="24"></label>
+              <label class="settings-field"><span data-i18n="campaignTimeUtc">Время UTC (ЧЧ:MM)</span><input id="campaignTimeUtc" class="text-input" type="text" placeholder="12:00"></label>
+            </div>
+            <span class="input-label" data-i18n="campaignWeekdays">Дни недели</span>
+            <div id="campaignWeekdaysRow" class="segmented campaign-weekdays hidden">
+              <button class="segment" type="button" data-weekday="0" data-i18n="weekdayMon">Пн</button>
+              <button class="segment" type="button" data-weekday="1" data-i18n="weekdayTue">Вт</button>
+              <button class="segment" type="button" data-weekday="2" data-i18n="weekdayWed">Ср</button>
+              <button class="segment" type="button" data-weekday="3" data-i18n="weekdayThu">Чт</button>
+              <button class="segment" type="button" data-weekday="4" data-i18n="weekdayFri">Пт</button>
+              <button class="segment" type="button" data-weekday="5" data-i18n="weekdaySat">Сб</button>
+              <button class="segment" type="button" data-weekday="6" data-i18n="weekdaySun">Вс</button>
+            </div>
+            <label class="input-label" for="campaignMessage" data-i18n="message">Сообщение</label>
+            <textarea id="campaignMessage" class="textarea-input" maxlength="4096" rows="5" placeholder="Текст кампании..."></textarea>
+            <label class="switch-row"><span data-i18n="campaignEnabled">Кампания включена</span><input id="campaignEnabledInput" type="checkbox" checked></label>
+            <button id="createCampaignBtn" class="primary-btn" type="button" data-i18n="createCampaign">Создать кампанию</button>
+          </article>
+          <div id="adminCampaignList" class="stack-list"></div>
+        </div>
         <div id="admin-admins" class="admin-section">
           <article class="panel form-card admin-grant-card">
             <div class="form-heading"><span class="form-icon">🛡</span><div><strong data-i18n="adminManagement">Управление администраторами</strong><small data-i18n="adminManagementHint">Полный доступ к админ-панели и команде /admin.</small></div></div>
@@ -362,6 +428,6 @@
   </div>
 
   <div id="toast" class="toast" aria-live="polite"></div>
-  <script src="/assets/app.js?v=novera-admin-partner-1"></script>
+  <script src="/assets/app.js?v=novera-campaigns-1"></script>
 </body>
 </html>

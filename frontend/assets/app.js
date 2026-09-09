@@ -406,6 +406,64 @@
   };
   Object.entries(TEST_PAYOUT_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
 
+  const CAMPAIGNS_I18N = {
+    ru:{
+      promoCode:'Промокод',promoCodeOptionalHint:'Необязательно. Бонус начисляется один раз при первом депозите с этим кодом.',
+      promoApplied:'Промокод применён: +{bonus} USDT бонуса. Итоговая сумма депозита: {total} USDT',promoInvalid:'Промокод недействителен или больше не активен',
+      promoAlreadyRedeemed:'Вы уже использовали этот промокод',promoMinDepositError:'Сумма депозита меньше минимума для этого промокода',
+      promoBonusLine:'Бонус по промокоду',promoEffectivePrincipalLine:'Итоговая сумма депозита',
+      campaignsTab:'Кампании',
+      newPromo:'Новый промокод',promoHint:'Бонус начисляется один раз пользователю при первом депозите с этим кодом.',
+      promoBonusType:'Тип бонуса',promoBonusPercent:'% от депозита',promoBonusFixed:'Фикс. сумма USDT',promoBonusValue:'Значение бонуса',
+      promoMaxRedemptions:'Лимит использований',promoMinDeposit:'Мин. депозит, USDT',createPromo:'Создать промокод',
+      promoCodeRequired:'Введите код промокода',promoBonusInvalid:'Укажите положительное значение бонуса',promoMaxInvalid:'Лимит использований должен быть не меньше 1',
+      promoCreated:'Промокод создан',promoNone:'Промокодов пока нет',promoUsed:'Использовано',
+      enableAction:'Включить',disableAction:'Отключить',statusEnabled:'Включён',statusDisabled:'Отключён',
+      promoEnabled:'Промокод включён',promoDisabled:'Промокод отключён',
+      newCampaign:'Новая кампания',campaignHint:'Автоматическая рассылка по расписанию с опциональным промокодом.',
+      campaignKind:'Тип кампании',campaignKindCustom:'Произвольная',campaignKindPromo:'Промокод',campaignKindPartner:'Партнёрская',
+      campaignPromoSelect:'Промокод кампании',campaignPromoNone:'Без промокода',
+      campaignScheduleMode:'Расписание',campaignScheduleInterval:'Интервал (часы)',campaignScheduleWeekly:'По дням недели',
+      campaignIntervalHours:'Интервал, часов',campaignTimeUtc:'Время UTC (ЧЧ:MM)',campaignWeekdays:'Дни недели',
+      weekdayMon:'Пн',weekdayTue:'Вт',weekdayWed:'Ср',weekdayThu:'Чт',weekdayFri:'Пт',weekdaySat:'Сб',weekdaySun:'Вс',
+      campaignEnabled:'Кампания включена',createCampaign:'Создать кампанию',
+      campaignMessageRequired:'Введите текст кампании',campaignPromoRequired:'Выберите промокод для кампании этого типа',
+      campaignWeekdaysRequired:'Выберите хотя бы один день недели',campaignTimeInvalid:'Время должно быть в формате ЧЧ:MM',
+      campaignCreated:'Кампания создана',campaignNone:'Кампаний пока нет',
+      campaignEnabledNotice:'Кампания включена',campaignDisabledNotice:'Кампания отключена',
+      runCampaignNow:'Запустить сейчас',campaignRunSent:'Рассылка кампании отправлена',campaignRunSkipped:'Кампания пропущена',
+      campaignNextRun:'Следующий запуск',campaignLastRun:'Последний запуск'
+    },
+    en:{
+      promoCode:'Promo code',promoCodeOptionalHint:'Optional. The bonus is granted once on the first deposit using this code.',
+      promoApplied:'Promo applied: +{bonus} USDT bonus. Total deposit amount: {total} USDT',promoInvalid:'This promo code is invalid or no longer active',
+      promoAlreadyRedeemed:'You already used this promo code',promoMinDepositError:'Deposit amount is below this promo minimum',
+      promoBonusLine:'Promo bonus',promoEffectivePrincipalLine:'Total deposit amount',
+      campaignsTab:'Campaigns',
+      newPromo:'New promo code',promoHint:'The bonus is granted once per user on their first deposit using this code.',
+      promoBonusType:'Bonus type',promoBonusPercent:'% of deposit',promoBonusFixed:'Fixed USDT amount',promoBonusValue:'Bonus value',
+      promoMaxRedemptions:'Redemption limit',promoMinDeposit:'Min deposit, USDT',createPromo:'Create promo code',
+      promoCodeRequired:'Enter a promo code',promoBonusInvalid:'Enter a positive bonus value',promoMaxInvalid:'Redemption limit must be at least 1',
+      promoCreated:'Promo code created',promoNone:'No promo codes yet',promoUsed:'Used',
+      enableAction:'Enable',disableAction:'Disable',statusEnabled:'Enabled',statusDisabled:'Disabled',
+      promoEnabled:'Promo code enabled',promoDisabled:'Promo code disabled',
+      newCampaign:'New campaign',campaignHint:'Automatic broadcast on a schedule, with an optional promo code.',
+      campaignKind:'Campaign type',campaignKindCustom:'Custom',campaignKindPromo:'Promo',campaignKindPartner:'Partner',
+      campaignPromoSelect:'Campaign promo code',campaignPromoNone:'No promo code',
+      campaignScheduleMode:'Schedule',campaignScheduleInterval:'Interval (hours)',campaignScheduleWeekly:'Weekly days',
+      campaignIntervalHours:'Interval, hours',campaignTimeUtc:'Time UTC (HH:MM)',campaignWeekdays:'Weekdays',
+      weekdayMon:'Mon',weekdayTue:'Tue',weekdayWed:'Wed',weekdayThu:'Thu',weekdayFri:'Fri',weekdaySat:'Sat',weekdaySun:'Sun',
+      campaignEnabled:'Campaign enabled',createCampaign:'Create campaign',
+      campaignMessageRequired:'Enter the campaign message',campaignPromoRequired:'Select a promo code for this campaign type',
+      campaignWeekdaysRequired:'Select at least one weekday',campaignTimeInvalid:'Time must use the HH:MM format',
+      campaignCreated:'Campaign created',campaignNone:'No campaigns yet',
+      campaignEnabledNotice:'Campaign enabled',campaignDisabledNotice:'Campaign disabled',
+      runCampaignNow:'Run now',campaignRunSent:'Campaign broadcast sent',campaignRunSkipped:'Campaign run skipped',
+      campaignNextRun:'Next run',campaignLastRun:'Last run'
+    }
+  };
+  Object.entries(CAMPAIGNS_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
+
   const ADMIN_FINANCE_I18N = {
     ru:{referralBalanceControl:'Реферальный баланс',referralBalanceNote:'Доступная к выводу сумма. Изменение фиксируется в журнале и не переписывает прошлые начисления.',referralBalanceSaved:'Реферальный баланс изменён',referralBalanceHistory:'История реферального баланса',noReferralBalanceHistory:'Реферальный баланс администратором ещё не менялся.',manualInvestment:'Открыть инвестицию',manualInvestmentNote:'Создаёт активную инвестицию без blockchain-пополнения. Она запускает реальные выплаты по текущему графику; первая — через 24 часа.',openInvestment:'Открыть инвестицию',investmentOpened:'Инвестиция открыта',closeInvestment:'Закрыть инвестицию',closeInvestmentSection:'Закрытие инвестиции',closeInvestmentNote:'Останавливает активную инвестицию: будущие начисления не создаются, queued-выплаты отменяются. Уже confirmed on-chain выплаты не откатываются. Требуется причина ниже.',confirmCloseInvestment:'Закрыть инвестицию #{id}? Будущие выплаты будут остановлены.',investmentClosed:'Инвестиция закрыта',partnerLevelAccess:'Доступ к уровням партнёрки',partnerLevelNote:'Ручной уровень действует только на будущие начисления и открывает все предыдущие уровни. Уровень 0 возвращает автоматическую квалификацию.',automaticQualification:'0 — автоматически',levelAccessSaved:'Доступ к уровням сохранён',levelHistory:'История доступа к уровням',noLevelHistory:'Ручной доступ к уровням ещё не менялся.',adminReason:'Причина изменения',adminReasonHint:'Обязательный комментарий для журнала',confirmOpenInvestment:'Открыть инвестицию {amount} USDT? Это запустит реальные выплаты по стандартному графику.',userWalletRequired:'Сначала укажите пользователю кошелёк для выплат',adminSource:'Открыто администратором'},
     en:{referralBalanceControl:'Referral balance',referralBalanceNote:'Amount currently available for withdrawal. Changes are audited and do not rewrite past accruals.',referralBalanceSaved:'Referral balance updated',referralBalanceHistory:'Referral balance history',noReferralBalanceHistory:'The referral balance has not been changed by an administrator.',manualInvestment:'Open investment',manualInvestmentNote:'Creates an active investment without an on-chain deposit. It starts real payouts on the current schedule; the first is due in 24 hours.',openInvestment:'Open investment',investmentOpened:'Investment opened',closeInvestment:'Close investment',closeInvestmentSection:'Close investment',closeInvestmentNote:'Stops an active investment: no further accruals, queued payouts are cancelled. Confirmed on-chain payouts are not reversed. Reason below is required.',confirmCloseInvestment:'Close investment #{id}? Future payouts will stop.',investmentClosed:'Investment closed',partnerLevelAccess:'Partner level access',partnerLevelNote:'Manual access applies only to future accruals and includes all prior levels. Level 0 restores automatic qualification.',automaticQualification:'0 — automatic',levelAccessSaved:'Partner level access saved',levelHistory:'Level access history',noLevelHistory:'Manual level access has not been changed.',adminReason:'Change reason',adminReasonHint:'Required audit comment',confirmOpenInvestment:'Open a {amount} USDT investment? This starts real payouts on the standard schedule.',userWalletRequired:'Set the user payout wallet first',adminSource:'Opened by administrator'},
@@ -938,6 +996,9 @@
     if (low.includes('token contract')) return tr('invalidContract');
     if (low.includes('set a payout wallet before withdrawing referral rewards') || low.includes('set a payout wallet before creating a deposit')) return tr('setPayoutWalletFirst');
     if (low.includes('too many pending deposit invoices')) return tr('tooManyPendingInvoices');
+    if (low.includes('promo code already redeemed by this user')) return tr('promoAlreadyRedeemed');
+    if (low.includes('deposit amount is below promo minimum')) return tr('promoMinDepositError');
+    if (low.includes('promo code is not available') || low.includes('promo code is not yet active') || low.includes('promo code has expired') || low.includes('promo code redemption limit reached') || low.includes('promo code does not grant a bonus') || low.includes('promo would exceed deposit maximum') || low.includes('promo code not found')) return tr('promoInvalid');
     if (low.includes('user payout wallet is not configured')) return tr('userWalletRequired');
     if (low.includes('referral balance below minimum withdrawal')) return tr('referralMinimum');
     if (low.includes('referrer not found')) return tr('referrerNotFound');
@@ -1453,13 +1514,22 @@
     if (!user.payout_address){toast(tr('setPayoutWalletFirst'),'error');switchView('wallet',{push:true});return;}
     if (!(chain.enabled && chain.deposits_enabled && chain.payouts_enabled && chain.treasury_address)){toast(tr('depositsDisabledUi'),'error');return;}
     if(!Number.isFinite(amount)||amount<Number(terms.deposit_min_usdt||1)||amount>Number(terms.deposit_max_usdt||100000)){toast(`${tr('amount')}: ${terms.deposit_min_usdt||1}–${terms.deposit_max_usdt||100000} USDT`,'error');return;}
+    const promoCode=$('depositPromoCode')?$('depositPromoCode').value.trim():'';
     const btn=$('createDeposit'); if(btn){btn.disabled=true;btn.dataset.busy='1';}
     try{
       const key=`invoice-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const invoice=await api('/api/deposits/invoice',{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify({amount})});
+      const body={amount};
+      if(promoCode) body.promo_code=promoCode;
+      const invoice=await api('/api/deposits/invoice',{method:'POST',headers:{'Idempotency-Key':key},body:JSON.stringify(body)});
       state.activeInvoice=invoice;
       try{sessionStorage.setItem('novera_active_invoice', JSON.stringify(invoice));}catch(_){}
-      renderInvoice(invoice);toast(tr('invoiceCreated'),'success');
+      renderInvoice(invoice);
+      const bonusUsdt=Number(invoice.bonus_usdt||0);
+      if(promoCode && bonusUsdt>0){
+        toast(tr('promoApplied').replace('{bonus}',bonusUsdt.toFixed(2)).replace('{total}',Number(invoice.effective_principal_usdt||amount).toFixed(2)),'success');
+      } else {
+        toast(tr('invoiceCreated'),'success');
+      }
     }catch(e){handleApiError(e);}
     finally{if(btn) btn.dataset.busy='';updateDepositForm(state.data);}
   }
@@ -1494,6 +1564,8 @@
       if(expired) stopInvoiceTimer();
     };
     const reusedNote=invoice.reused?`<div class="invoice-reused">${esc(tr('invoiceReused'))}</div>`:'';
+    const bonusUsdt=Number(invoice.bonus_usdt||0);
+    const promoLine=bonusUsdt>0?`<div class="invoice-line"><span>${esc(tr('promoBonusLine'))}</span><strong class="amount-positive">+${esc(bonusUsdt.toFixed(2))} USDT</strong></div><div class="invoice-line"><span>${esc(tr('promoEffectivePrincipalLine'))}</span><strong>${esc(Number(invoice.effective_principal_usdt||0).toFixed(2))} USDT</strong></div>`:'';
     const allCopy=`${tr('network')}: BNB Smart Chain (BEP-20)\n${tr('invoiceToken')}: ${token}\n${tr('invoiceChainId')}: ${chainId}\n${tr('invoiceAddressTitle')}: ${address}\n${tr('invoiceExactTitle')}: ${exact}`;
     box.classList.remove('hidden');
     box.innerHTML=`
@@ -1512,6 +1584,7 @@
       <div class="invoice-line"><span>${esc(tr('invoiceChainId'))}</span><strong>${esc(chainId)}</strong></div>
       <div class="invoice-line invoice-address-line"><span>${esc(tr('invoiceAddressTitle'))}</span><strong class="invoice-address">${esc(address)}</strong></div>
       <div class="invoice-line"><span>${esc(tr('validUntil'))}</span><strong>${esc(fmtDate(expiresAt))}</strong></div>
+      ${promoLine}
       <div class="invoice-actions">
         <button type="button" class="touch-target" data-copy-invoice="amount">${esc(tr('copyAmount'))}</button>
         <button type="button" class="touch-target" data-copy-invoice="address">${esc(tr('copyAddress'))}</button>
@@ -1680,6 +1753,7 @@
       else if(tab==='deposits')await loadAdminDeposits();
       else if(tab==='payouts')await loadAdminPayouts();
       else if(tab==='broadcasts')await loadAdminBroadcasts();
+      else if(tab==='campaigns')await loadAdminCampaigns();
       else if(tab==='admins')await loadAdminAdmins();
       else if(tab==='terms')await loadAdminTerms();
       else if(tab==='links')await loadAdminLinks();
@@ -1939,6 +2013,129 @@
     }).join(''):`<div class="empty-state">${esc(tr('broadcastNone'))}</div>`;
     $('adminBroadcastList').querySelectorAll('[data-retry-broadcast]').forEach((btn)=>btn.addEventListener('click',()=>retryBroadcast(btn.dataset.retryBroadcast,Number(btn.dataset.failedCount||0))));
     await loadBroadcastAudience();
+  }
+  async function loadAdminCampaigns(){
+    const [promos,campaigns]=await Promise.all([api('/api/admin/promo-codes'),api('/api/admin/campaigns')]);
+    state.adminCache.promos=promos;
+    state.adminCache.campaigns=campaigns;
+    renderCampaignPromoOptions();
+    renderAdminPromoList();
+    renderAdminCampaignList();
+  }
+  function promoBonusLabel(p){
+    return p.bonus_type==='percent'?`${p.bonus_percent||0}%`:`${p.bonus_usdt||0} USDT`;
+  }
+  function renderCampaignPromoOptions(){
+    const select=$('campaignPromo'); if(!select) return;
+    const promos=state.adminCache.promos||[];
+    const current=select.value;
+    select.innerHTML=`<option value="">${esc(tr('campaignPromoNone'))}</option>`+promos.map((p)=>`<option value="${esc(p.id)}">${esc(p.code)} · ${esc(promoBonusLabel(p))}</option>`).join('');
+    if(promos.some((p)=>String(p.id)===current)) select.value=current;
+  }
+  function renderAdminPromoList(){
+    const promos=state.adminCache.promos||[];
+    $('adminPromoList').innerHTML=promos.length?promos.map((p)=>{
+      const minDeposit=Number(p.min_deposit_usdt||0);
+      const usedLine=`${esc(tr('promoUsed'))}: ${esc(p.redemption_count||0)}/${esc(p.max_redemptions||0)}`;
+      const minLine=minDeposit>0?` · ${esc(tr('promoMinDeposit'))}: ${esc(p.min_deposit_usdt)} USDT`:'';
+      return `<article class="list-card"><div class="list-card-header"><div><strong>${esc(p.code)}</strong><small>${esc(promoBonusLabel(p))} · ${usedLine}${minLine}</small></div><span class="tag ${p.enabled?'active':'failed'}">${esc(p.enabled?tr('statusEnabled'):tr('statusDisabled'))}</span></div><div class="admin-actions"><button class="admin-action touch-target" type="button" data-toggle-promo="${esc(p.id)}" data-enabled="${p.enabled?'1':'0'}">${esc(p.enabled?tr('disableAction'):tr('enableAction'))}</button></div></article>`;
+    }).join(''):`<div class="empty-state">${esc(tr('promoNone'))}</div>`;
+    $('adminPromoList').querySelectorAll('[data-toggle-promo]').forEach((b)=>b.addEventListener('click',()=>togglePromo(b.dataset.togglePromo,b.dataset.enabled==='1')));
+  }
+  async function togglePromo(id,currentlyEnabled){
+    try{
+      await api(`/api/admin/promo-codes/${id}`,{method:'PATCH',body:JSON.stringify({enabled:!currentlyEnabled})});
+      toast(tr(currentlyEnabled?'promoDisabled':'promoEnabled'),'success');
+      await loadAdminCampaigns();
+    }catch(e){handleApiError(e);}
+  }
+  async function createPromo(){
+    const code=$('promoCodeInput').value.trim();
+    const bonusType=$('promoBonusType').value;
+    const bonusValue=Number($('promoBonusValue').value);
+    const maxRedemptions=Number($('promoMaxRedemptions').value);
+    const minDeposit=Number($('promoMinDeposit').value||0);
+    if(!code){toast(tr('promoCodeRequired'),'error');return;}
+    if(!Number.isFinite(bonusValue)||bonusValue<=0){toast(tr('promoBonusInvalid'),'error');return;}
+    if(!Number.isFinite(maxRedemptions)||maxRedemptions<1){toast(tr('promoMaxInvalid'),'error');return;}
+    const payload={code,bonus_type:bonusType,max_redemptions:Math.round(maxRedemptions),min_deposit_usdt:Number.isFinite(minDeposit)?minDeposit:0,enabled:true};
+    if(bonusType==='percent') payload.bonus_percent=bonusValue; else payload.bonus_usdt=bonusValue;
+    const btn=$('createPromoBtn'); btn.disabled=true;
+    try{
+      await api('/api/admin/promo-codes',{method:'POST',body:JSON.stringify(payload)});
+      toast(tr('promoCreated'),'success');
+      $('promoCodeInput').value='';$('promoBonusValue').value='';$('promoMaxRedemptions').value='';$('promoMinDeposit').value='';
+      await loadAdminCampaigns();
+    }catch(e){handleApiError(e);}finally{btn.disabled=false;}
+  }
+  function campaignKindLabel(kind){
+    if(kind==='promo') return tr('campaignKindPromo');
+    if(kind==='partner') return tr('campaignKindPartner');
+    return tr('campaignKindCustom');
+  }
+  function campaignScheduleLabel(c){
+    if(c.schedule_mode==='weekly'){
+      const keys=['weekdayMon','weekdayTue','weekdayWed','weekdayThu','weekdayFri','weekdaySat','weekdaySun'];
+      const days=(c.weekdays||[]).slice().sort((a,b)=>a-b).map((d)=>tr(keys[d]||'')).join(', ');
+      return `${tr('campaignScheduleWeekly')} · ${days||'—'} · ${esc(c.time_utc||'')} UTC`;
+    }
+    return `${tr('campaignScheduleInterval')} · ${esc(c.interval_hours||0)}h`;
+  }
+  function renderAdminCampaignList(){
+    const campaigns=state.adminCache.campaigns||[];
+    const promos=state.adminCache.promos||[];
+    $('adminCampaignList').innerHTML=campaigns.length?campaigns.map((c)=>{
+      const promo=c.promo_code_id?promos.find((p)=>Number(p.id)===Number(c.promo_code_id)):null;
+      const promoLine=promo?`<small>${esc(tr('campaignPromoSelect'))}: ${esc(promo.code)}</small>`:'';
+      const runLine=`${esc(tr('campaignNextRun'))}: ${esc(fmtDate(c.next_run_at))}${c.last_sent_at?' · '+esc(tr('campaignLastRun'))+': '+esc(fmtDate(c.last_sent_at)):''}`;
+      return `<article class="list-card"><div class="list-card-header"><div><strong>${esc(campaignKindLabel(c.kind))} · ${esc(broadcastAudienceLabel(c.audience))}</strong><small>${esc(campaignScheduleLabel(c))}</small></div><span class="tag ${c.enabled?'active':'failed'}">${esc(c.enabled?tr('statusEnabled'):tr('statusDisabled'))}</span></div>${promoLine}<small class="broadcast-preview-text">${esc(c.message_html||'')}</small><small>${runLine}</small><div class="admin-actions"><button class="admin-action touch-target" type="button" data-toggle-campaign="${esc(c.id)}" data-enabled="${c.enabled?'1':'0'}">${esc(c.enabled?tr('disableAction'):tr('enableAction'))}</button><button class="admin-action touch-target" type="button" data-run-campaign="${esc(c.id)}">${esc(tr('runCampaignNow'))}</button></div></article>`;
+    }).join(''):`<div class="empty-state">${esc(tr('campaignNone'))}</div>`;
+    $('adminCampaignList').querySelectorAll('[data-toggle-campaign]').forEach((b)=>b.addEventListener('click',()=>toggleCampaign(b.dataset.toggleCampaign,b.dataset.enabled==='1')));
+    $('adminCampaignList').querySelectorAll('[data-run-campaign]').forEach((b)=>b.addEventListener('click',()=>runCampaignNow(b.dataset.runCampaign)));
+  }
+  async function toggleCampaign(id,currentlyEnabled){
+    try{
+      await api(`/api/admin/campaigns/${id}`,{method:'PATCH',body:JSON.stringify({enabled:!currentlyEnabled})});
+      toast(tr(currentlyEnabled?'campaignDisabledNotice':'campaignEnabledNotice'),'success');
+      await loadAdminCampaigns();
+    }catch(e){handleApiError(e);}
+  }
+  async function runCampaignNow(id){
+    try{
+      const res=await api(`/api/admin/campaigns/${id}/run`,{method:'POST'});
+      if(res && res.status==='sent') toast(tr('campaignRunSent'),'success');
+      else toast(`${tr('campaignRunSkipped')}${res&&res.reason?': '+res.reason:''}`,'error');
+      await loadAdminCampaigns();
+    }catch(e){handleApiError(e);}
+  }
+  function updateCampaignScheduleFields(){
+    const weekly=$('campaignScheduleMode').value==='weekly';
+    $('campaignWeekdaysRow').classList.toggle('hidden',!weekly);
+    $('campaignIntervalField').classList.toggle('hidden',weekly);
+  }
+  async function createCampaign(){
+    const kind=$('campaignKind').value;
+    const audience=$('campaignAudience').value;
+    const scheduleMode=$('campaignScheduleMode').value;
+    const intervalHours=Number($('campaignIntervalHours').value||24);
+    const timeUtc=$('campaignTimeUtc').value.trim()||'12:00';
+    const message=$('campaignMessage').value.trim();
+    const promoSelect=$('campaignPromo').value;
+    const enabled=$('campaignEnabledInput').checked;
+    const weekdays=Array.from($('campaignWeekdaysRow').querySelectorAll('.segment.active')).map((b)=>Number(b.dataset.weekday));
+    if(!message){toast(tr('campaignMessageRequired'),'error');return;}
+    if(kind==='promo' && !promoSelect){toast(tr('campaignPromoRequired'),'error');return;}
+    if(scheduleMode==='weekly' && !weekdays.length){toast(tr('campaignWeekdaysRequired'),'error');return;}
+    if(!/^\d{1,2}:\d{2}$/.test(timeUtc)){toast(tr('campaignTimeInvalid'),'error');return;}
+    const payload={kind,audience,schedule_mode:scheduleMode,interval_hours:Math.max(1,Math.round(intervalHours)||24),weekdays,time_utc:timeUtc,message_html:message,enabled};
+    if(promoSelect) payload.promo_code_id=Number(promoSelect);
+    const btn=$('createCampaignBtn'); btn.disabled=true;
+    try{
+      await api('/api/admin/campaigns',{method:'POST',body:JSON.stringify(payload)});
+      toast(tr('campaignCreated'),'success');
+      $('campaignMessage').value='';
+      await loadAdminCampaigns();
+    }catch(e){handleApiError(e);}finally{btn.disabled=false;}
   }
   // Mirrors _TelegramHTMLSanitizer in delta_backend/api.py: unknown tags are
   // dropped while their text survives, and only safe-scheme <a href> is kept.
@@ -2387,6 +2584,11 @@
   $('broadcastText').addEventListener('input',renderBroadcastPreview);
   $('broadcastAudience').addEventListener('change',renderBroadcastAudienceCount);
   $('testBroadcast').addEventListener('click',sendBroadcastTest);
+  $('createPromoBtn').addEventListener('click',createPromo);
+  $('createCampaignBtn').addEventListener('click',createCampaign);
+  $('campaignScheduleMode').addEventListener('change',updateCampaignScheduleFields);
+  $('campaignWeekdaysRow').addEventListener('click',(e)=>{const b=e.target.closest('[data-weekday]');if(b)b.classList.toggle('active');});
+  updateCampaignScheduleFields();
 
   window.addEventListener('pageshow',refreshTelegramAccountContext);
   window.addEventListener('focus',refreshTelegramAccountContext);
