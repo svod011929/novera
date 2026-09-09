@@ -392,6 +392,14 @@
     tk:{inviterManagement:'Hyzmatdaş baglanyşygy',currentInviter:'Häzirki çakylykçy',newInviter:'Täze çakylykçy',inviterIdentifier:'Telegram ID ýa-da @username',setInviter:'Çakylykçyny üýtget',clearInviter:'Çakylykçyny aýyr',inviterChangeHint:'Üýtgeşme gurluşa we geljekki referal hasaplamalaryna täsir edýär. Öň hasaplanan ýa-da tölenen sylaglar geçirilmeýär.',inviterChanged:'Çakylykçy üýtgedildi',inviterCleared:'Çakylykçy aýryldy',inviterHistory:'Çakylykçynyň üýtgeşme taryhy',noInviterHistory:'Çakylykçy administrator tarapyndan entek üýtgedilmedi.',from:'Öň',to:'Soň',referrerNotFound:'Çakylykçy tapylmady',referrerCycle:'Ulanyjynyň öz gurluşyndaky adamy saýlap bolmaýar',referrerSelf:'Ulanyjy özüni özi çagyryp bilmeýär',ambiguousReferrer:'Bu @username birnäçe ýazga gabat gelýär. Telegram ID ulanyň.',confirmInviterChange:'Çakylykçy üýtgedilsinmi? Ulanyjynyň gurluşy täze çakylykçynyň aşagyna geçer. Öňki sylaglar üýtgemez.'}
   };
   Object.entries(INVITER_ADMIN_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
+
+  const UNMATCHED_ADMIN_I18N = {
+    ru:{unmatched:'Несопоставленные',noUnmatchedDeposits:'Несопоставленных депозитов нет.',matchUnmatched:'Сопоставить',matchInvoicePrompt:'ID заявки (invoice_id)',matchReasonPrompt:'Причина восстановления',unmatchedMatched:'Депозит сопоставлен с заявкой'},
+    en:{unmatched:'Unmatched',noUnmatchedDeposits:'No unmatched deposits.',matchUnmatched:'Match',matchInvoicePrompt:'Invoice ID',matchReasonPrompt:'Recovery reason',unmatchedMatched:'Deposit matched to invoice'},
+    uk:{unmatched:'Неспівставлені',noUnmatchedDeposits:'Неспівставлених депозитів немає.',matchUnmatched:'Співставити',matchInvoicePrompt:'ID заявки (invoice_id)',matchReasonPrompt:'Причина відновлення',unmatchedMatched:'Депозит співставлено із заявкою'}
+  };
+  Object.entries(UNMATCHED_ADMIN_I18N).forEach(([code, values]) => Object.assign(I18N[code] || (I18N[code] = {}), values));
+
   const TEST_PAYOUT_I18N = {
     ru:{testPayout:'Тестовая выплата',testPayoutTitle:'Реальная тестовая выплата',testPayoutHint:'Проверка реального автовывода тем же payout-worker, который обслуживает выплаты пользователей. Минимум — 1 USDT.',testPayoutWarning:'Это реальная необратимая транзакция из казны. Указанная сумма USDT будет отправлена на введённый BSC-кошелёк.',testPayoutAddress:'Кошелёк получателя',testPayoutAmount:'Сумма USDT',testPayoutAcknowledge:'Я понимаю, что USDT будут реально отправлены из казны',testPayoutSend:'Запустить реальную выплату',testPayoutQueued:'Тестовая выплата поставлена в очередь автовывода',testPayoutHistory:'Последние тестовые выплаты',testPayoutNone:'Тестовых выплат ещё не было.',testPayoutMinimum:'Минимальная тестовая выплата — 1 USDT',testPayoutSameWallet:'Для теста укажите кошелёк, отличный от казны',treasuryInsufficientUsdt:'Недостаточно USDT в казне',treasuryNoGas:'В казне нет BNB для комиссии сети',realPayoutsDisabled:'Реальные blockchain-выплаты не настроены',testPayoutConfirmDialog:'Подтвердить РЕАЛЬНУЮ выплату {amount} USDT на {address}? Отменить blockchain-транзакцию после отправки невозможно.',openExplorer:'Открыть транзакцию'},
     en:{testPayout:'Test payout',testPayoutTitle:'Real test payout',testPayoutHint:'Tests the same automatic payout worker used for user withdrawals. Minimum: 1 USDT.',testPayoutWarning:'This is a real irreversible treasury transaction. The entered USDT amount will be sent to the specified BSC wallet.',testPayoutAddress:'Recipient wallet',testPayoutAmount:'USDT amount',testPayoutAcknowledge:'I understand that real USDT will leave the treasury',testPayoutSend:'Run real payout',testPayoutQueued:'Test payout queued for automatic withdrawal',testPayoutHistory:'Recent test payouts',testPayoutNone:'No test payouts yet.',testPayoutMinimum:'Minimum test payout is 1 USDT',testPayoutSameWallet:'Use a wallet different from the treasury',treasuryInsufficientUsdt:'Treasury has insufficient USDT',treasuryNoGas:'Treasury has no BNB for network gas',realPayoutsDisabled:'Real blockchain payouts are not configured',testPayoutConfirmDialog:'Confirm REAL payout of {amount} USDT to {address}? A blockchain transaction cannot be reversed after broadcast.',openExplorer:'Open transaction'},
@@ -1975,6 +1983,7 @@
       else if(tab==='treasury')await loadAdminTreasury();
       else if(tab==='system')await loadAdminSystem();
       else if(tab==='logs')await loadAdminLogs();
+      else if(tab==='unmatched')await loadAdminUnmatched();
       else if(tab==='overview'&&state.adminCache.summary) await renderAdminOverview(state.adminCache.summary);
     }catch(e){handleApiError(e);}
   }
@@ -2755,6 +2764,41 @@
   async function loadAdminLogs(){
     const rows=await api('/api/admin/audit?limit=150');
     $('adminLogsList').innerHTML=rows.length?rows.map((r)=>`<article class="list-card"><div class="list-card-header"><strong>${esc(r.event_type)}</strong><span class="date-text">${esc(fmtDate(r.created_at))}</span></div><div class="log-details">${esc(r.details||'—')}</div></article>`).join(''):`<div class="empty-state">${esc(tr('noLogs'))}</div>`;
+  }
+  async function loadAdminUnmatched(){
+    const res=await api('/api/admin/chain-deposits?matched=0&limit=50');
+    const rows=(res&&res.items)||[];
+    const chain=(state.data&&state.data.chain)||{};
+    const explorer=String(chain.explorer_tx_url||'');
+    $('adminUnmatchedList').innerHTML=rows.length?rows.map((d)=>{
+      const tx=String(d.tx_hash||'');
+      const amountText=d.amount!=null?String(d.amount):money(d.amount_minor);
+      const txLine=tx
+        ?(explorer
+          ?`<a class="tx-link" href="${esc(explorer.replace('{tx_hash}',tx))}" target="_blank" rel="noopener">${esc(compactAddress(tx))}</a>`
+          :`<small>${esc(compactAddress(tx))}</small>`)
+        :'';
+      return `<article class="list-card"><div class="list-card-header"><div><strong>${esc(amountText)} USDT</strong><small>#${esc(d.id)} · ${esc(fmtDate(d.created_at))}</small></div><button class="admin-action touch-target" type="button" data-match-chain-deposit="${esc(d.id)}">${esc(tr('matchUnmatched'))}</button></div>${txLine}</article>`;
+    }).join(''):`<div class="empty-state">${esc(tr('noUnmatchedDeposits'))}</div>`;
+    $('adminUnmatchedList').querySelectorAll('[data-match-chain-deposit]').forEach((b)=>b.addEventListener('click',()=>matchAdminChainDeposit(b.dataset.matchChainDeposit)));
+  }
+  async function matchAdminChainDeposit(id){
+    const invoiceRaw=window.prompt(tr('matchInvoicePrompt'),'');
+    if(invoiceRaw===null) return;
+    const invoice_id=Number.parseInt(String(invoiceRaw).trim(),10);
+    if(!Number.isInteger(invoice_id)||invoice_id<=0){toast(tr('invalidData'),'error');return;}
+    const reason=window.prompt(tr('matchReasonPrompt'),'');
+    if(reason===null) return;
+    const cleanReason=String(reason).trim();
+    if(!cleanReason){toast(tr('invalidData'),'error');return;}
+    try{
+      await api(`/api/admin/chain-deposits/${encodeURIComponent(id)}/match`,{
+        method:'POST',
+        body:JSON.stringify({invoice_id,reason:cleanReason})
+      });
+      toast(tr('unmatchedMatched'),'success');
+      await loadAdminUnmatched();
+    }catch(e){handleApiError(e);}
   }
 
   function clearPollingTimers(){
