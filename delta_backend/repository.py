@@ -397,6 +397,19 @@ class RepositoryError(RuntimeError):
     pass
 
 
+PROMO_CODE_MAX_LENGTH = 32
+PROMO_BONUS_TYPES = {"percent", "fixed"}
+
+
+def compute_promo_bonus_minor(promo: dict[str, object], base_minor: int) -> int:
+    kind = str(promo.get("bonus_type") or "")
+    if kind == "percent":
+        return (int(base_minor) * int(promo.get("bonus_bps") or 0)) // 10_000
+    if kind == "fixed":
+        return int(promo.get("bonus_fixed_minor") or 0)
+    raise RepositoryError("Invalid promo bonus type")
+
+
 class DeltaRepository:
     def __init__(self, path: Path | str, business: MiniAppSettings) -> None:
         self.path = Path(path)
@@ -541,6 +554,59 @@ class DeltaRepository:
                         f"WHERE instr({column}, ?) > 0",
                         (old, new, old),
                     )
+
+        await connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS promo_codes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              code TEXT NOT NULL UNIQUE,
+              bonus_type TEXT NOT NULL CHECK (bonus_type IN ('percent', 'fixed')),
+              bonus_bps INTEGER NOT NULL DEFAULT 0 CHECK (bonus_bps >= 0),
+              bonus_fixed_minor INTEGER NOT NULL DEFAULT 0 CHECK (bonus_fixed_minor >= 0),
+              max_redemptions INTEGER NOT NULL CHECK (max_redemptions >= 1),
+              redemption_count INTEGER NOT NULL DEFAULT 0 CHECK (redemption_count >= 0),
+              min_deposit_minor INTEGER NOT NULL DEFAULT 0 CHECK (min_deposit_minor >= 0),
+              valid_from INTEGER,
+              valid_until INTEGER,
+              enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+              created_by INTEGER NOT NULL,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            )
+            """
+        )
+        await connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS promo_redemptions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              promo_code_id INTEGER NOT NULL REFERENCES promo_codes(id),
+              user_id INTEGER NOT NULL,
+              deposit_id INTEGER NOT NULL,
+              invoice_id INTEGER NOT NULL,
+              bonus_minor INTEGER NOT NULL CHECK (bonus_minor > 0),
+              created_at INTEGER NOT NULL,
+              UNIQUE(promo_code_id, user_id)
+            )
+            """
+        )
+
+        cursor = await connection.execute("PRAGMA table_info(deposit_invoices)")
+        invoice_columns = {str(row[1]) for row in await cursor.fetchall()}
+        if "promo_code_id" not in invoice_columns:
+            await connection.execute(
+                "ALTER TABLE deposit_invoices ADD COLUMN promo_code_id INTEGER"
+            )
+
+        cursor = await connection.execute("PRAGMA table_info(deposits)")
+        deposit_columns = {str(row[1]) for row in await cursor.fetchall()}
+        if "bonus_minor" not in deposit_columns:
+            await connection.execute(
+                "ALTER TABLE deposits ADD COLUMN bonus_minor INTEGER NOT NULL DEFAULT 0"
+            )
+        if "promo_code_id" not in deposit_columns:
+            await connection.execute(
+                "ALTER TABLE deposits ADD COLUMN promo_code_id INTEGER"
+            )
 
     async def close(self) -> None:
         if self.connection is not None:
@@ -1173,6 +1239,211 @@ class DeltaRepository:
             )
             if not cursor.rowcount:
                 raise RepositoryError("User is missing or blocked")
+
+    @staticmethod
+    def _normalize_promo_code(code: str) -> str:
+        normalized = str(code or "").strip().upper()
+        if not normalized:
+            raise RepositoryError("Promo code is required")
+        if len(normalized) > PROMO_CODE_MAX_LENGTH:
+            raise RepositoryError(
+                f"Promo code must be at most {PROMO_CODE_MAX_LENGTH} characters"
+            )
+        return normalized
+
+    @staticmethod
+    def _validate_promo_bonus(
+        bonus_type: str, bonus_bps: int, bonus_fixed_minor: int
+    ) -> None:
+        if bonus_type not in PROMO_BONUS_TYPES:
+            raise RepositoryError("Invalid promo bonus type")
+        bonus_bps = int(bonus_bps)
+        bonus_fixed_minor = int(bonus_fixed_minor)
+        if bonus_bps < 0 or bonus_fixed_minor < 0:
+            raise RepositoryError("Promo bonus values cannot be negative")
+        if bonus_type == "percent":
+            if bonus_bps <= 0:
+                raise RepositoryError("Percent promo requires bonus_bps > 0")
+            if bonus_fixed_minor != 0:
+                raise RepositoryError(
+                    "Percent promo must not set bonus_fixed_minor"
+                )
+        else:
+            if bonus_fixed_minor <= 0:
+                raise RepositoryError("Fixed promo requires bonus_fixed_minor > 0")
+            if bonus_bps != 0:
+                raise RepositoryError("Fixed promo must not set bonus_bps")
+
+    @staticmethod
+    def _promo_row_to_dict(row: aiosqlite.Row) -> dict[str, object]:
+        data = dict(row)
+        data["enabled"] = bool(int(data.get("enabled") or 0))
+        return data
+
+    async def admin_create_promo_code(
+        self,
+        *,
+        code: str,
+        bonus_type: str,
+        bonus_bps: int,
+        bonus_fixed_minor: int,
+        max_redemptions: int,
+        min_deposit_minor: int,
+        valid_from: int | None,
+        valid_until: int | None,
+        enabled: bool,
+        created_by: int,
+    ) -> dict[str, object]:
+        normalized_code = self._normalize_promo_code(code)
+        self._validate_promo_bonus(bonus_type, bonus_bps, bonus_fixed_minor)
+        if int(max_redemptions) < 1:
+            raise RepositoryError("max_redemptions must be at least 1")
+        if int(min_deposit_minor) < 0:
+            raise RepositoryError("min_deposit_minor cannot be negative")
+        now = int(time.time())
+        async with self.transaction() as connection:
+            try:
+                cursor = await connection.execute(
+                    """
+                    INSERT INTO promo_codes(
+                        code, bonus_type, bonus_bps, bonus_fixed_minor,
+                        max_redemptions, min_deposit_minor, valid_from, valid_until,
+                        enabled, created_by, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        normalized_code,
+                        bonus_type,
+                        int(bonus_bps),
+                        int(bonus_fixed_minor),
+                        int(max_redemptions),
+                        int(min_deposit_minor),
+                        None if valid_from is None else int(valid_from),
+                        None if valid_until is None else int(valid_until),
+                        1 if enabled else 0,
+                        int(created_by),
+                        now,
+                        now,
+                    ),
+                )
+            except aiosqlite.IntegrityError as exc:
+                raise RepositoryError("Promo code already exists") from exc
+            cursor = await connection.execute(
+                "SELECT * FROM promo_codes WHERE id = ?", (cursor.lastrowid,)
+            )
+            row = await cursor.fetchone()
+        return self._promo_row_to_dict(row)
+
+    async def admin_list_promo_codes(self) -> list[dict[str, object]]:
+        connection = self._connection()
+        async with self._lock:
+            cursor = await connection.execute(
+                "SELECT * FROM promo_codes ORDER BY id DESC"
+            )
+            rows = await cursor.fetchall()
+        return [self._promo_row_to_dict(row) for row in rows]
+
+    async def admin_update_promo_code(
+        self, promo_id: int, **fields: object
+    ) -> dict[str, object]:
+        allowed = {
+            "code",
+            "bonus_type",
+            "bonus_bps",
+            "bonus_fixed_minor",
+            "max_redemptions",
+            "min_deposit_minor",
+            "valid_from",
+            "valid_until",
+            "enabled",
+        }
+        unknown = set(fields) - allowed
+        if unknown:
+            raise RepositoryError(f"Unknown promo field(s): {', '.join(sorted(unknown))}")
+
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT * FROM promo_codes WHERE id = ?", (int(promo_id),)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                raise RepositoryError("Promo code not found")
+            current = dict(row)
+
+            if "code" in fields:
+                current["code"] = self._normalize_promo_code(str(fields["code"]))
+            if "bonus_type" in fields:
+                current["bonus_type"] = str(fields["bonus_type"])
+            if "bonus_bps" in fields:
+                current["bonus_bps"] = int(fields["bonus_bps"])
+            if "bonus_fixed_minor" in fields:
+                current["bonus_fixed_minor"] = int(fields["bonus_fixed_minor"])
+            self._validate_promo_bonus(
+                str(current["bonus_type"]),
+                int(current["bonus_bps"]),
+                int(current["bonus_fixed_minor"]),
+            )
+
+            if "max_redemptions" in fields:
+                if int(fields["max_redemptions"]) < 1:
+                    raise RepositoryError("max_redemptions must be at least 1")
+                current["max_redemptions"] = int(fields["max_redemptions"])
+            if "min_deposit_minor" in fields:
+                if int(fields["min_deposit_minor"]) < 0:
+                    raise RepositoryError("min_deposit_minor cannot be negative")
+                current["min_deposit_minor"] = int(fields["min_deposit_minor"])
+            if "valid_from" in fields:
+                value = fields["valid_from"]
+                current["valid_from"] = None if value is None else int(value)
+            if "valid_until" in fields:
+                value = fields["valid_until"]
+                current["valid_until"] = None if value is None else int(value)
+            if "enabled" in fields:
+                current["enabled"] = 1 if fields["enabled"] else 0
+
+            try:
+                await connection.execute(
+                    """
+                    UPDATE promo_codes SET
+                        code = ?, bonus_type = ?, bonus_bps = ?, bonus_fixed_minor = ?,
+                        max_redemptions = ?, min_deposit_minor = ?, valid_from = ?,
+                        valid_until = ?, enabled = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        current["code"],
+                        current["bonus_type"],
+                        int(current["bonus_bps"]),
+                        int(current["bonus_fixed_minor"]),
+                        int(current["max_redemptions"]),
+                        int(current["min_deposit_minor"]),
+                        current["valid_from"],
+                        current["valid_until"],
+                        int(current["enabled"]),
+                        int(time.time()),
+                        int(promo_id),
+                    ),
+                )
+            except aiosqlite.IntegrityError as exc:
+                raise RepositoryError("Promo code already exists") from exc
+
+            cursor = await connection.execute(
+                "SELECT * FROM promo_codes WHERE id = ?", (int(promo_id),)
+            )
+            row = await cursor.fetchone()
+        return self._promo_row_to_dict(row)
+
+    async def get_promo_by_code(self, code: str) -> dict[str, object] | None:
+        normalized_code = str(code or "").strip().upper()
+        if not normalized_code:
+            return None
+        connection = self._connection()
+        async with self._lock:
+            cursor = await connection.execute(
+                "SELECT * FROM promo_codes WHERE code = ?", (normalized_code,)
+            )
+            row = await cursor.fetchone()
+        return self._promo_row_to_dict(row) if row else None
 
     async def create_invoice(
         self,
