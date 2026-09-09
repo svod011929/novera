@@ -487,8 +487,68 @@ def campaign_promo_bonus_label(promo: dict[str, object]) -> str:
     raise RepositoryError("Invalid promo bonus type")
 
 
-def render_campaign_message(message_html: str, promo: dict[str, object] | None) -> str:
+DEFAULT_PROMO_CAMPAIGN_MESSAGE = (
+    "🎁 <b>Промокод NOVERA</b>\n\n"
+    "Бонус к депозиту: <b>{{bonus_label}}</b>\n\n"
+    "Ваш код:\n"
+    "<code>{{code}}</code>\n\n"
+    "Откройте по ссылке:\n"
+    "https://t.me/{{bot_username}}?start=promo_{{code}}\n\n"
+    "Или в NOVERA → <b>Пополнить</b> → вставьте промокод при создании депозита.\n"
+    "Бонус увеличивает сумму депозита. Один раз на пользователя."
+)
+
+
+def parse_promo_start_param(start_param: str | None) -> str | None:
+    """Extract a normalized promo code from ``promo_*`` / ``promo-*`` start payload.
+
+    Referral payloads (``ref_``) and invalid bodies return ``None`` without raising.
+    """
+    raw = str(start_param or "").strip()
+    if not raw:
+        return None
+    lower = raw.lower()
+    if lower.startswith("ref_"):
+        return None
+    if lower.startswith("promo_"):
+        body = raw[len("promo_") :]
+    elif lower.startswith("promo-"):
+        body = raw[len("promo-") :]
+    else:
+        return None
+    try:
+        return DeltaRepository._normalize_promo_code(body)
+    except RepositoryError:
+        return None
+
+DEFAULT_PARTNER_CAMPAIGN_MESSAGE = (
+    "👥 <b>NOVERA Partner Network</b>\n\n"
+    "Приглашайте партнёров по своей ссылке и получайте процент с их депозитов "
+    "на 5 уровнях.\n"
+    "Доступ к уровням открывается по обороту 1-й линии — личный депозит "
+    "не требуется.\n\n"
+    "Откройте вкладку <b>Команда</b> в NOVERA и скопируйте партнёрскую ссылку."
+)
+
+
+def default_campaign_message(kind: str) -> str:
+    if kind == "promo":
+        return DEFAULT_PROMO_CAMPAIGN_MESSAGE
+    if kind == "partner":
+        return DEFAULT_PARTNER_CAMPAIGN_MESSAGE
+    return ""
+
+
+def render_campaign_message(
+    message_html: str,
+    promo: dict[str, object] | None,
+    *,
+    bot_username: str | None = None,
+) -> str:
     message = str(message_html or "")
+    username = str(bot_username or "").lstrip("@").strip()
+    if username:
+        message = message.replace("{{bot_username}}", html.escape(username))
     if promo is None:
         return message
     return message.replace(
@@ -1233,10 +1293,16 @@ class DeltaRepository:
             referrer_id = None
         async with self.transaction() as connection:
             cursor = await connection.execute(
-                "SELECT telegram_id FROM users WHERE telegram_id = ?",
+                "SELECT telegram_id, referrer_id FROM users WHERE telegram_id = ?",
                 (telegram_id,),
             )
-            is_new_user = await cursor.fetchone() is None
+            existing = await cursor.fetchone()
+            is_new_user = existing is None
+            current_referrer = (
+                None
+                if existing is None or existing["referrer_id"] is None
+                else int(existing["referrer_id"])
+            )
             if referrer_id is not None:
                 cursor = await connection.execute(
                     "SELECT 1 FROM users WHERE telegram_id = ?",
@@ -1244,6 +1310,11 @@ class DeltaRepository:
                 )
                 if await cursor.fetchone() is None:
                     referrer_id = None
+
+            # First-touch only: bind when the user has no inviter yet; never overwrite.
+            can_bind = referrer_id is not None and current_referrer is None
+            insert_referrer = referrer_id if (is_new_user or can_bind) else None
+
             await connection.execute(
                 """
                 INSERT INTO users(
@@ -1254,24 +1325,30 @@ class DeltaRepository:
                     username = excluded.username,
                     first_name = excluded.first_name,
                     language = excluded.language,
-                    last_seen_at = excluded.last_seen_at
+                    last_seen_at = excluded.last_seen_at,
+                    referrer_id = CASE
+                        WHEN users.referrer_id IS NULL AND excluded.referrer_id IS NOT NULL
+                        THEN excluded.referrer_id
+                        ELSE users.referrer_id
+                    END
                 """,
                 (
                     telegram_id,
                     username,
                     first_name,
                     language or "ru",
-                    referrer_id,
+                    insert_referrer,
                     now,
                     now,
                 ),
             )
-            if is_new_user and referrer_id is not None:
+            if referrer_id is not None and (can_bind or is_new_user):
+                joined_referrer = int(referrer_id)
                 label = f"@{username}" if username else (first_name.strip() or f"ID {telegram_id}")
                 safe_label = html.escape(label)
                 await self._queue_notification(
                     connection,
-                    user_id=referrer_id,
+                    user_id=joined_referrer,
                     category="partner",
                     event_type="referral_joined",
                     title="Новый партнёр в команде",
@@ -1611,6 +1688,8 @@ class DeltaRepository:
         hour, minute = parse_campaign_time_utc(time_utc)
         message = str(message_html or "").strip()
         if not message:
+            message = default_campaign_message(kind).strip()
+        if not message:
             raise RepositoryError("Campaign message is required")
         if len(message) > CAMPAIGN_MESSAGE_MAX_LENGTH:
             raise RepositoryError(
@@ -1883,7 +1962,11 @@ class DeltaRepository:
             if reason is not None:
                 return await self._record_campaign_skip(campaign_id, kind, reason, now)
 
-        message = render_campaign_message(str(campaign["message_html"]), promo)
+        message = render_campaign_message(
+            str(campaign["message_html"]),
+            promo,
+            bot_username=self.business.bot_username,
+        )
         broadcast = await self.create_broadcast(
             int(campaign["created_by"]),
             message,
@@ -2087,6 +2170,62 @@ class DeltaRepository:
                     "effective_principal_preview_minor": base_minor + bonus_minor,
                 }
         raise RepositoryError("Could not reserve a unique deposit amount")
+
+    async def get_user_invoice(
+        self, user_id: int, invoice_id: int
+    ) -> dict[str, object] | None:
+        """Return an invoice owned by ``user_id``, or ``None`` if missing/foreign."""
+        now = int(time.time())
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT invoice.id, invoice.status, invoice.expires_at,
+                       invoice.exact_minor, invoice.base_minor, invoice.promo_code_id,
+                       promo.bonus_type, promo.bonus_bps, promo.bonus_fixed_minor,
+                       deposit.id AS deposit_id
+                FROM deposit_invoices invoice
+                LEFT JOIN promo_codes promo ON promo.id = invoice.promo_code_id
+                LEFT JOIN deposits deposit ON deposit.invoice_id = invoice.id
+                WHERE invoice.id = ? AND invoice.user_id = ?
+                """,
+                (int(invoice_id), int(user_id)),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            status = str(row["status"])
+            expires_at = int(row["expires_at"])
+            if status == "pending" and expires_at <= now:
+                status = "expired"
+                await connection.execute(
+                    "UPDATE deposit_invoices SET status = 'expired' "
+                    "WHERE id = ? AND status = 'pending'",
+                    (int(invoice_id),),
+                )
+            deposit_id = row["deposit_id"]
+            deposit_id = int(deposit_id) if deposit_id is not None else None
+            bonus_minor = 0
+            if row["promo_code_id"] is not None:
+                try:
+                    bonus_minor = compute_promo_bonus_minor(
+                        dict(row), int(row["base_minor"])
+                    )
+                except RepositoryError:
+                    bonus_minor = 0
+            base_minor = int(row["base_minor"])
+            credited = status == "paid" or deposit_id is not None
+            return {
+                "id": int(row["id"]),
+                "status": status,
+                "expires_at": expires_at,
+                "exact_amount": minor_to_text(int(row["exact_minor"]), trim=False),
+                "bonus_usdt": minor_to_text(bonus_minor, trim=False),
+                "effective_principal_usdt": minor_to_text(
+                    base_minor + bonus_minor, trim=False
+                ),
+                "deposit_id": deposit_id,
+                "credited": credited,
+            }
 
     async def expire_invoices(self) -> int:
         async with self.transaction() as connection:
@@ -4311,6 +4450,9 @@ class DeltaRepository:
         user_id: int,
         identifier: str | None,
         changed_by: int,
+        *,
+        require_null_referrer: bool = False,
+        reason: str | None = None,
     ) -> dict[str, object]:
         """Change a user's direct inviter without rewriting historical rewards.
 
@@ -4321,6 +4463,8 @@ class DeltaRepository:
         clean = (identifier or "").strip().lstrip("@")
         if len(clean) > 64:
             raise RepositoryError("Invalid referrer identifier")
+        clean_reason = reason.strip()[:500] if reason is not None else ""
+        audit_reason = f";reason={clean_reason}" if clean_reason else ""
         now = int(time.time())
 
         async with self.transaction() as connection:
@@ -4334,6 +4478,19 @@ class DeltaRepository:
             old_referrer_id = (
                 int(target["referrer_id"]) if target["referrer_id"] is not None else None
             )
+            if require_null_referrer and old_referrer_id is not None:
+                cursor = await connection.execute(
+                    "SELECT telegram_id, username, first_name FROM users WHERE telegram_id = ?",
+                    (old_referrer_id,),
+                )
+                row = await cursor.fetchone()
+                old_referrer = dict(row) if row else None
+                return {
+                    "changed": False,
+                    "old_referrer": old_referrer,
+                    "new_referrer": old_referrer,
+                    "reason": "already_bound",
+                }
 
             new_referrer_id: int | None = None
             new_referrer: dict[str, object] | None = None
@@ -4426,7 +4583,10 @@ class DeltaRepository:
                 "INSERT INTO audit_events(event_type, details, created_at) VALUES (?, ?, ?)",
                 (
                     "user_referrer_changed",
-                    f"admin={changed_by};user={user_id};old={old_referrer_id or ''};new={new_referrer_id or ''}",
+                    (
+                        f"admin={changed_by};user={user_id};old={old_referrer_id or ''};"
+                        f"new={new_referrer_id or ''}{audit_reason}"
+                    ),
                     now,
                 ),
             )

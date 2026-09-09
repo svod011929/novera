@@ -39,7 +39,8 @@ class MiniAppSettings(BaseSettings):
     invoice_ttl_minutes: int = 30
 
     referral_level_bps: tuple[int, ...] = (800, 400, 250, 150, 100)
-    referral_personal_thresholds_usdt: tuple[int, ...] = (50, 100, 300, 500, 1000)
+    # Personal deposit is not required for partner levels (line turnover only).
+    referral_personal_thresholds_usdt: tuple[int, ...] = (0, 0, 0, 0, 0)
     referral_line_thresholds_usdt: tuple[int, ...] = (100, 300, 500, 1500, 5000)
 
     api_host: str = "0.0.0.0"

@@ -149,6 +149,29 @@ async def test_promo_campaign_skips_when_code_exhausted(tmp_path) -> None:
         await repo.close()
 
 
+async def test_promo_campaign_empty_message_uses_default_template(tmp_path) -> None:
+    from delta_backend.repository import DEFAULT_PROMO_CAMPAIGN_MESSAGE
+
+    repo = await _repo(tmp_path)
+    try:
+        await repo.ensure_user(1, "admin", "Admin", "ru")
+        promo = await _percent_promo(repo, "AUTO", 1, max_redemptions=10)
+        campaign = await repo.admin_create_campaign(
+            kind="promo",
+            audience="all",
+            schedule_mode="interval",
+            interval_hours=24,
+            message_html="   ",
+            promo_code_id=int(promo["id"]),
+            created_by=1,
+        )
+        assert campaign["message_html"] == DEFAULT_PROMO_CAMPAIGN_MESSAGE
+        assert "{{code}}" in campaign["message_html"]
+        assert "{{bonus_label}}" in campaign["message_html"]
+    finally:
+        await repo.close()
+
+
 async def test_promo_campaign_renders_placeholders(tmp_path) -> None:
     repo = await _repo(tmp_path)
     try:

@@ -49,7 +49,7 @@ def test_default_terms_match_v10_5_marketing_board() -> None:
     assert settings.daily_profit_bps == 1000
     assert settings.payout_days == 20
     assert settings.referral_level_bps == (800, 400, 250, 150, 100)
-    assert settings.referral_personal_thresholds_usdt == (50, 100, 300, 500, 1000)
+    assert settings.referral_personal_thresholds_usdt == (0, 0, 0, 0, 0)
     assert settings.referral_line_thresholds_usdt == (100, 300, 500, 1500, 5000)
 
 

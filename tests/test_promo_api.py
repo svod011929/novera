@@ -242,9 +242,37 @@ async def test_invoice_with_promo_returns_bonus_fields_and_second_use_is_conflic
             )
             assert body["promo_code_id"] is not None
             exact_minor = usdt_to_minor(body["exact_amount"])
+            invoice_id = int(body["id"])
+            assert invoice_id == int(body["invoice_id"])
+
+            status = await client.get(
+                f"/api/deposits/invoice/{invoice_id}",
+                headers=user_headers,
+            )
+            assert status.status_code == 200
+            status_body = status.json()
+            assert status_body["id"] == invoice_id
+            assert status_body["status"] == "pending"
+            assert status_body["credited"] is False
+
+            foreign = await client.get(
+                f"/api/deposits/invoice/{invoice_id}",
+                headers=admin_headers,
+            )
+            assert foreign.status_code == 404
 
             # Open the deposit so the redemption is actually committed.
             await _open_deposit_via_transfer(repository, exact_minor, log_index=1)
+
+            paid = await client.get(
+                f"/api/deposits/invoice/{invoice_id}",
+                headers=user_headers,
+            )
+            assert paid.status_code == 200
+            paid_body = paid.json()
+            assert paid_body["status"] == "paid"
+            assert paid_body["credited"] is True
+            assert paid_body["deposit_id"] is not None
 
             # A second invoice with the same promo for the same user is rejected.
             conflict = await client.post(

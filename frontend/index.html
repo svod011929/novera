@@ -178,7 +178,7 @@
       </section>
 
       <section id="view-team" class="view">
-        <div class="page-heading"><p class="overline" data-i18n="partnerProgram">ПАРТНЁРСКАЯ ПРОГРАММА</p><h2 data-i18n="team">Команда</h2><p data-i18n="teamDesc">Реферальная ссылка, пять уровней и фактическая статистика вашей структуры.</p></div>
+        <div class="page-heading"><p class="overline" data-i18n="partnerProgram">ПАРТНЁРСКАЯ ПРОГРАММА</p><h2 data-i18n="team">Команда</h2><p data-i18n="teamDesc">Реферальная ссылка и 5 уровней. Доступ открывается по обороту 1-й линии — личный депозит не нужен.</p></div>
         <article class="panel referral-card">
           <div id="teamInviter" class="inviter-row"><span data-i18n="inviter">Пригласитель</span><strong>—</strong></div>
           <span class="input-label" data-i18n="referralLink">Ваша реферальная ссылка</span>
@@ -380,7 +380,11 @@
               <button class="segment" type="button" data-weekday="6" data-i18n="weekdaySun">Вс</button>
             </div>
             <label class="input-label" for="campaignMessage" data-i18n="message">Сообщение</label>
-            <textarea id="campaignMessage" class="textarea-input" maxlength="4096" rows="5" placeholder="Текст кампании..."></textarea>
+            <p id="campaignMessageHint" class="field-hint"></p>
+            <textarea id="campaignMessage" class="textarea-input" maxlength="4096" rows="7" placeholder="Текст кампании..."></textarea>
+            <div class="telegram-preview campaign-preview">
+              <div id="campaignMessagePreview" class="telegram-preview-text broadcast-preview-text"></div>
+            </div>
             <label class="switch-row"><span data-i18n="campaignEnabled">Кампания включена</span><input id="campaignEnabledInput" type="checkbox" checked></label>
             <button id="createCampaignBtn" class="primary-btn" type="button" data-i18n="createCampaign">Создать кампанию</button>
           </article>
@@ -428,6 +432,6 @@
   </div>
 
   <div id="toast" class="toast" aria-live="polite"></div>
-  <script src="/assets/app.js?v=novera-campaigns-2"></script>
+  <script src="/assets/app.js?v=novera-promo-deeplink-1"></script>
 </body>
 </html>

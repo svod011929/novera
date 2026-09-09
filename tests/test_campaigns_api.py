@@ -137,7 +137,7 @@ async def test_admin_can_create_list_patch_campaign(tmp_path) -> None:
             assert listing.status_code == 200
             assert any(int(item["id"]) == campaign_id for item in listing.json())
 
-            # Missing message -> 422.
+            # Missing message for custom -> 422.
             blank = await client.post(
                 "/api/admin/campaigns",
                 headers=headers,
@@ -150,6 +150,37 @@ async def test_admin_can_create_list_patch_campaign(tmp_path) -> None:
                 },
             )
             assert blank.status_code == 422
+
+            promo = await repository.admin_create_promo_code(
+                code="AUTOTEMP",
+                bonus_type="percent",
+                bonus_bps=1000,
+                bonus_fixed_minor=0,
+                max_redemptions=100,
+                min_deposit_minor=0,
+                valid_from=None,
+                valid_until=None,
+                enabled=True,
+                created_by=ADMIN_ID,
+            )
+            promo_id = int(promo["id"])
+
+            # Empty promo message uses default template.
+            promo_blank = await client.post(
+                "/api/admin/campaigns",
+                headers=headers,
+                json={
+                    "kind": "promo",
+                    "audience": "all",
+                    "schedule_mode": "interval",
+                    "interval_hours": 24,
+                    "message_html": "",
+                    "promo_code_id": promo_id,
+                },
+            )
+            assert promo_blank.status_code == 200
+            assert "{{code}}" in promo_blank.json()["message_html"]
+            assert "Промокод NOVERA" in promo_blank.json()["message_html"]
 
             # Unknown promo code -> 404.
             missing_promo = await client.post(

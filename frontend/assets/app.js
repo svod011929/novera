@@ -70,7 +70,7 @@
 
   const I18N = {
     ru: {
-      sessionTitle:'Нужна авторизация Telegram',sessionText:'Для старой сессии после обновления один раз отправьте боту /start и откройте NOVERA из нового сообщения. Дальше /start повторять не нужно.',close:'Закрыть',connecting:'Подключение',dashboard:'ЛИЧНЫЙ КАБИНЕТ',welcome:'Добро пожаловать',heroSubtitle:'Ваши активы, выплаты и команда в одном месте.',activeAssets:'Сейчас в работе',totalDeposited:'Всего пополнено',totalPaid:'Получено выплат',team:'Команда',people:'участников',partnerIncome:'Партнёрский доход',quickActions:'БЫСТРЫЕ ДЕЙСТВИЯ',manageFunds:'Управление',deposit:'Пополнить',bep20:'USDT · BEP-20',assets:'Активы',activeAndCompleted:'активные и завершённые',referrals:'Рефералы',fiveLevels:'5 уровней',history:'История',allOperations:'все операции',currentTerms:'ТЕКУЩИЕ УСЛОВИЯ',minimum:'Минимум',period:'Период',dailyRate:'Ставка/день',termsFineprint:'Фактические параметры отображаются из текущей конфигурации сервиса.',portfolio:'ПОРТФЕЛЬ',assetsDesc:'Активные и завершённые депозиты с прогрессом выплат.',wallet:'Кошелёк',depositAndPayout:'Пополнение и выплаты',walletDesc:'Адрес для выплат и создание точной заявки на пополнение USDT BEP-20.',payoutWallet:'Кошелёк для выплат',payoutWalletHint:'BNB Smart Chain · адрес 0x…',address:'Адрес',save:'Сохранить',newDeposit:'Новое пополнение',amount:'Сумма USDT',createInvoice:'Создать заявку',networkWarningTitle:'Проверьте сеть и точную сумму',networkWarningText:'Отправляйте только USDT BEP-20 на показанный адрес и ровно ту сумму, которую сформировала заявка.',partnerProgram:'ПАРТНЁРСКАЯ ПРОГРАММА',teamDesc:'Реферальная ссылка, пять уровней и фактическая статистика вашей структуры.',referralLink:'Ваша реферальная ссылка',copy:'Копировать',structure:'СТРУКТУРА',members:'Участники',activity:'АКТИВНОСТЬ',historyDesc:'Депозиты и выплаты в хронологическом порядке.',all:'Все',deposits:'Депозиты',payouts:'Выплаты',account:'АККАУНТ',profile:'Профиль',support:'Поддержка',adminPanel:'Админ-панель',adminDesc:'Пользователи, операции, рассылки и состояние системы.',overview:'Обзор',users:'Пользователи',broadcasts:'Рассылка',terms:'Условия',system:'Система',logs:'Логи',userSearch:'Поиск по ID или @username',search:'Найти',failed:'Ошибки',newBroadcast:'Новая рассылка',blockedExcluded:'Заблокированные пользователи исключаются автоматически',audience:'Аудитория',allUsers:'Все пользователи',investors:'Только инвесторы',partners:'Только партнёры',message:'Сообщение',send:'Отправить',home:'Главная',admin:'Админ',language:'Язык',user:'Пользователь',online:'Онлайн',blocked:'Заблокирован',active:'Активный',completed:'Завершён',paused:'Пауза',error:'Ошибка',pending:'Ожидает',paid:'Оплачен',expired:'Истёк',confirmed:'Подтверждён',queued:'В очереди',signed:'Подписан',broadcast:'Отправлен',daily:'Выплата',referral:'Реферальная',level:'Уровень',turnover:'Оборот',earned:'Получено',waiting:'Ожидает',personal:'Лично',line:'Линия',activeCount:'Активных',completedCount:'Завершённых',principal:'Сумма',progress:'Прогресс',days:'дней',noAssets:'Активов пока нет.',noHistory:'История операций пока пуста.',noMembers:'Участников в структуре пока нет.',walletSaved:'Кошелёк сохранён',invalidWallet:'Проверьте BSC-адрес',invoiceCreated:'Заявка создана',network:'Сеть',exactAmount:'Точная сумма',validUntil:'Действует до',copyAddress:'Адрес',copyAmount:'Сумма',copyAll:'Все реквизиты',copied:'Скопировано',copyFailed:'Не удалось скопировать',sessionExpired:'Сессия Telegram устарела',openFromTelegram:'Откройте NOVERA через кнопку Mini App в Telegram.',authFailed:'Не удалось авторизоваться',role:'Роль',telegramId:'Telegram ID',registered:'Регистрация',payoutAddress:'Кошелёк выплат',referrer:'Пригласил',none:'—',adminRole:'Администратор',userRole:'Пользователь',refresh:'Обновить',newUsers:'Новых за сутки',active7d:'Активных 7 дней',activeDeposits:'Активных депозитов',failedPayouts:'Проблемных выплат',deposited:'Пополнено',paidOut:'Выплачено',today:'За сутки',netFlow:'Депозиты − подтвержд. выплаты',openDetails:'Открыть',block:'Заблокировать',unblock:'Разблокировать',transactions:'Транзакции',status:'Статус',attempts:'Попытки',retry:'Повторить',broadcastSent:'Рассылка создана',emptyMessage:'Введите сообщение',systemOnline:'Система работает',configured:'Настроено',notConfigured:'Не настроено',running:'Работает',stopped:'Остановлено',treasury:'Казна',confirmations:'Подтверждения',scanInterval:'Интервал сканирования',noLogs:'Событий пока нет.',noUsers:'Пользователи не найдены.',noDeposits:'Депозитов пока нет.',noPayouts:'Выплат пока нет.',notificationCenter:'ЦЕНТР СОБЫТИЙ',notifications:'Уведомления',notificationsDesc:'Пополнения, выплаты и события партнёрской программы.',markAllRead:'Прочитать все',partnerProgramShort:'Партнёрка',noNotifications:'Уведомлений пока нет.',newNotification:'Новое уведомление',telegramPushHint:'Сообщения бота работают как push-уведомления Telegram.'
+      sessionTitle:'Нужна авторизация Telegram',sessionText:'Для старой сессии после обновления один раз отправьте боту /start и откройте NOVERA из нового сообщения. Дальше /start повторять не нужно.',close:'Закрыть',connecting:'Подключение',dashboard:'ЛИЧНЫЙ КАБИНЕТ',welcome:'Добро пожаловать',heroSubtitle:'Ваши активы, выплаты и команда в одном месте.',activeAssets:'Сейчас в работе',totalDeposited:'Всего пополнено',totalPaid:'Получено выплат',team:'Команда',people:'участников',partnerIncome:'Партнёрский доход',quickActions:'БЫСТРЫЕ ДЕЙСТВИЯ',manageFunds:'Управление',deposit:'Пополнить',bep20:'USDT · BEP-20',assets:'Активы',activeAndCompleted:'активные и завершённые',referrals:'Рефералы',fiveLevels:'5 уровней',history:'История',allOperations:'все операции',currentTerms:'ТЕКУЩИЕ УСЛОВИЯ',minimum:'Минимум',period:'Период',dailyRate:'Ставка/день',termsFineprint:'Фактические параметры отображаются из текущей конфигурации сервиса.',portfolio:'ПОРТФЕЛЬ',assetsDesc:'Активные и завершённые депозиты с прогрессом выплат.',wallet:'Кошелёк',depositAndPayout:'Пополнение и выплаты',walletDesc:'Адрес для выплат и создание точной заявки на пополнение USDT BEP-20.',payoutWallet:'Кошелёк для выплат',payoutWalletHint:'BNB Smart Chain · адрес 0x…',address:'Адрес',save:'Сохранить',newDeposit:'Новое пополнение',amount:'Сумма USDT',createInvoice:'Создать заявку',networkWarningTitle:'Проверьте сеть и точную сумму',networkWarningText:'Отправляйте только USDT BEP-20 на показанный адрес и ровно ту сумму, которую сформировала заявка.',partnerProgram:'ПАРТНЁРСКАЯ ПРОГРАММА',teamDesc:'Реферальная ссылка и 5 уровней. Доступ открывается по обороту 1-й линии — личный депозит не нужен.',referralLink:'Ваша реферальная ссылка',copy:'Копировать',structure:'СТРУКТУРА',members:'Участники',activity:'АКТИВНОСТЬ',historyDesc:'Депозиты и выплаты в хронологическом порядке.',all:'Все',deposits:'Депозиты',payouts:'Выплаты',account:'АККАУНТ',profile:'Профиль',support:'Поддержка',adminPanel:'Админ-панель',adminDesc:'Пользователи, операции, рассылки и состояние системы.',overview:'Обзор',users:'Пользователи',broadcasts:'Рассылка',terms:'Условия',system:'Система',logs:'Логи',userSearch:'Поиск по ID или @username',search:'Найти',failed:'Ошибки',newBroadcast:'Новая рассылка',blockedExcluded:'Заблокированные пользователи исключаются автоматически',audience:'Аудитория',allUsers:'Все пользователи',investors:'Только инвесторы',partners:'Только партнёры',message:'Сообщение',send:'Отправить',home:'Главная',admin:'Админ',language:'Язык',user:'Пользователь',online:'Онлайн',blocked:'Заблокирован',active:'Активный',completed:'Завершён',paused:'Пауза',error:'Ошибка',pending:'Ожидает',paid:'Оплачен',expired:'Истёк',confirmed:'Подтверждён',queued:'В очереди',signed:'Подписан',broadcast:'Отправлен',daily:'Выплата',referral:'Реферальная',level:'Уровень',turnover:'Оборот',earned:'Получено',waiting:'Ожидает',personal:'Лично',line:'Линия',activeCount:'Активных',completedCount:'Завершённых',principal:'Сумма',progress:'Прогресс',days:'дней',noAssets:'Активов пока нет.',noHistory:'История операций пока пуста.',noMembers:'Участников в структуре пока нет.',walletSaved:'Кошелёк сохранён',invalidWallet:'Проверьте BSC-адрес',invoiceCreated:'Заявка создана',network:'Сеть',exactAmount:'Точная сумма',validUntil:'Действует до',copyAddress:'Адрес',copyAmount:'Сумма',copyAll:'Все реквизиты',copied:'Скопировано',copyFailed:'Не удалось скопировать',sessionExpired:'Сессия Telegram устарела',openFromTelegram:'Откройте NOVERA через кнопку Mini App в Telegram.',authFailed:'Не удалось авторизоваться',role:'Роль',telegramId:'Telegram ID',registered:'Регистрация',payoutAddress:'Кошелёк выплат',referrer:'Пригласил',none:'—',adminRole:'Администратор',userRole:'Пользователь',refresh:'Обновить',newUsers:'Новых за сутки',active7d:'Активных 7 дней',activeDeposits:'Активных депозитов',failedPayouts:'Проблемных выплат',deposited:'Пополнено',paidOut:'Выплачено',today:'За сутки',netFlow:'Депозиты − подтвержд. выплаты',openDetails:'Открыть',block:'Заблокировать',unblock:'Разблокировать',transactions:'Транзакции',status:'Статус',attempts:'Попытки',retry:'Повторить',broadcastSent:'Рассылка создана',emptyMessage:'Введите сообщение',systemOnline:'Система работает',configured:'Настроено',notConfigured:'Не настроено',running:'Работает',stopped:'Остановлено',treasury:'Казна',confirmations:'Подтверждения',scanInterval:'Интервал сканирования',noLogs:'Событий пока нет.',noUsers:'Пользователи не найдены.',noDeposits:'Депозитов пока нет.',noPayouts:'Выплат пока нет.',notificationCenter:'ЦЕНТР СОБЫТИЙ',notifications:'Уведомления',notificationsDesc:'Пополнения, выплаты и события партнёрской программы.',markAllRead:'Прочитать все',partnerProgramShort:'Партнёрка',noNotifications:'Уведомлений пока нет.',newNotification:'Новое уведомление',telegramPushHint:'Сообщения бота работают как push-уведомления Telegram.'
     },
     en: {dashboard:'DASHBOARD',welcome:'Welcome',heroSubtitle:'Your assets, payouts and team in one place.',activeAssets:'Active now',totalDeposited:'Total deposited',totalPaid:'Total paid',team:'Team',people:'members',partnerIncome:'Partner income',quickActions:'QUICK ACTIONS',manageFunds:'Manage',deposit:'Deposit',assets:'Assets',referrals:'Referrals',history:'History',wallet:'Wallet',profile:'Profile',support:'Support',home:'Home',admin:'Admin',language:'Language',currentTerms:'CURRENT TERMS',minimum:'Minimum',period:'Period',dailyRate:'Rate/day',portfolio:'PORTFOLIO',assetsDesc:'Active and completed deposits with payout progress.',depositAndPayout:'Deposits & payouts',payoutWallet:'Payout wallet',address:'Address',save:'Save',newDeposit:'New deposit',amount:'USDT amount',createInvoice:'Create invoice',partnerProgram:'PARTNER PROGRAM',referralLink:'Your referral link',copy:'Copy',members:'Members',activity:'ACTIVITY',all:'All',deposits:'Deposits',payouts:'Payouts',account:'ACCOUNT',adminPanel:'Admin panel',overview:'Overview',users:'Users',broadcasts:'Broadcasts',terms:'Terms',system:'System',logs:'Logs',search:'Search',failed:'Failed',send:'Send',user:'User',online:'Online',connecting:'Connecting',sessionTitle:'Telegram authorization required',sessionText:'For an old session after this update, use /start once and open NOVERA from the new message. You will not need /start again.',close:'Close',active:'Active',completed:'Completed',pending:'Pending',confirmed:'Confirmed',queued:'Queued',error:'Error',level:'Level',turnover:'Turnover',earned:'Earned',waiting:'Pending',personal:'Personal',line:'Line',activeCount:'Active',completedCount:'Completed',principal:'Amount',progress:'Progress',days:'days',noAssets:'No assets yet.',noHistory:'No activity yet.',noMembers:'No members yet.',walletSaved:'Wallet saved',invalidWallet:'Check the BSC address',invoiceCreated:'Invoice created',network:'Network',exactAmount:'Exact amount',validUntil:'Valid until',copyAddress:'Address',copyAmount:'Amount',copyAll:'Copy details',copied:'Copied',copyFailed:'Copy failed',sessionExpired:'Telegram session expired',openFromTelegram:'Open NOVERA using the Mini App button in Telegram.',authFailed:'Authentication failed',role:'Role',telegramId:'Telegram ID',registered:'Registered',payoutAddress:'Payout wallet',referrer:'Referrer',adminRole:'Administrator',userRole:'User',refresh:'Refresh',newUsers:'New 24h',active7d:'Active 7d',activeDeposits:'Active deposits',failedPayouts:'Failed payouts',deposited:'Deposited',paidOut:'Paid',today:'24h',netFlow:'Deposits − confirmed payouts',openDetails:'Details',block:'Block',unblock:'Unblock',retry:'Retry',broadcastSent:'Broadcast created',emptyMessage:'Enter a message',systemOnline:'System online',configured:'Configured',notConfigured:'Not configured',running:'Running',stopped:'Stopped',treasury:'Treasury',confirmations:'Confirmations',scanInterval:'Scan interval',noLogs:'No events yet.',noUsers:'No users found.',noDeposits:'No deposits yet.',noPayouts:'No payouts yet.',notificationCenter:'EVENT CENTER',notifications:'Notifications',notificationsDesc:'Deposits, payouts and partner-program events.',markAllRead:'Mark all read',partnerProgramShort:'Partners',noNotifications:'No notifications yet.',newNotification:'New notification',telegramPushHint:'Bot messages work as Telegram push notifications.'},
     uk: {dashboard:'ОСОБИСТИЙ КАБІНЕТ',welcome:'Ласкаво просимо',heroSubtitle:'Ваші активи, виплати та команда в одному місці.',activeAssets:'Зараз у роботі',totalDeposited:'Всього поповнено',totalPaid:'Отримано виплат',team:'Команда',people:'учасників',partnerIncome:'Партнерський дохід',deposit:'Поповнити',assets:'Активи',referrals:'Реферали',history:'Історія',wallet:'Гаманець',profile:'Профіль',support:'Підтримка',home:'Головна',admin:'Адмін',language:'Мова',minimum:'Мінімум',period:'Період',dailyRate:'Ставка/день',depositAndPayout:'Поповнення і виплати',payoutWallet:'Гаманець для виплат',address:'Адреса',save:'Зберегти',newDeposit:'Нове поповнення',amount:'Сума USDT',createInvoice:'Створити заявку',partnerProgram:'ПАРТНЕРСЬКА ПРОГРАМА',referralLink:'Ваше реферальне посилання',copy:'Копіювати',members:'Учасники',activity:'АКТИВНІСТЬ',all:'Усі',deposits:'Депозити',payouts:'Виплати',account:'АКАУНТ',adminPanel:'Адмін-панель',users:'Користувачі',broadcasts:'Розсилка',terms:'Умови',system:'Система',logs:'Логи',search:'Знайти',send:'Надіслати',online:'Онлайн',connecting:'Підключення',sessionTitle:'Сесія Telegram застаріла',sessionText:'Закрийте Mini App і відкрийте його знову з бота.',close:'Закрити'},
@@ -410,6 +410,8 @@
     ru:{
       promoCode:'Промокод',promoCodeOptionalHint:'Необязательно. Бонус начисляется один раз при первом депозите с этим кодом.',
       promoApplied:'Промокод применён: +{bonus} USDT бонуса. Итоговая сумма депозита: {total} USDT',promoInvalid:'Промокод недействителен или больше не активен',
+      promoDeepLinkApplied:'Промокод {code} подставлен. Укажите сумму и создайте заявку.',
+      invoiceDetecting:'Ищем перевод в сети',invoiceCredited:'Зачислено',invoiceRefresh:'Обновить',invoiceOpenAssets:'К активам',
       promoAlreadyRedeemed:'Вы уже использовали этот промокод',promoMinDepositError:'Сумма депозита меньше минимума для этого промокода',
       promoBonusLine:'Бонус по промокоду',promoEffectivePrincipalLine:'Итоговая сумма депозита',
       campaignsTab:'Кампании',
@@ -427,7 +429,7 @@
       campaignIntervalHours:'Интервал, часов',campaignTimeUtc:'Время UTC (ЧЧ:MM)',campaignWeekdays:'Дни недели',
       weekdayMon:'Пн',weekdayTue:'Вт',weekdayWed:'Ср',weekdayThu:'Чт',weekdayFri:'Пт',weekdaySat:'Сб',weekdaySun:'Вс',
       campaignEnabled:'Кампания включена',createCampaign:'Создать кампанию',
-      campaignMessageRequired:'Введите текст кампании',campaignPromoRequired:'Выберите промокод для кампании этого типа',
+      campaignMessageRequired:'Введите текст кампании',campaignMessageHint:'Для типа «Промокод» шаблон подставляется сам — код и бонус вставятся при рассылке. Можно отредактировать.',campaignPromoRequired:'Выберите промокод для кампании этого типа',
       campaignWeekdaysRequired:'Выберите хотя бы один день недели',campaignTimeInvalid:'Время должно быть в формате ЧЧ:MM',
       campaignCreated:'Кампания создана',campaignNone:'Кампаний пока нет',
       campaignEnabledNotice:'Кампания включена',campaignDisabledNotice:'Кампания отключена',
@@ -437,6 +439,8 @@
     en:{
       promoCode:'Promo code',promoCodeOptionalHint:'Optional. The bonus is granted once on the first deposit using this code.',
       promoApplied:'Promo applied: +{bonus} USDT bonus. Total deposit amount: {total} USDT',promoInvalid:'This promo code is invalid or no longer active',
+      promoDeepLinkApplied:'Promo {code} prefilled. Enter amount and create the invoice.',
+      invoiceDetecting:'Looking for the transfer on-chain',invoiceCredited:'Credited',invoiceRefresh:'Refresh',invoiceOpenAssets:'Open assets',
       promoAlreadyRedeemed:'You already used this promo code',promoMinDepositError:'Deposit amount is below this promo minimum',
       promoBonusLine:'Promo bonus',promoEffectivePrincipalLine:'Total deposit amount',
       campaignsTab:'Campaigns',
@@ -454,7 +458,7 @@
       campaignIntervalHours:'Interval, hours',campaignTimeUtc:'Time UTC (HH:MM)',campaignWeekdays:'Weekdays',
       weekdayMon:'Mon',weekdayTue:'Tue',weekdayWed:'Wed',weekdayThu:'Thu',weekdayFri:'Fri',weekdaySat:'Sat',weekdaySun:'Sun',
       campaignEnabled:'Campaign enabled',createCampaign:'Create campaign',
-      campaignMessageRequired:'Enter the campaign message',campaignPromoRequired:'Select a promo code for this campaign type',
+      campaignMessageRequired:'Enter the campaign message',campaignMessageHint:'For Promo campaigns a template is filled automatically — code and bonus are injected on send. You can edit it.',campaignPromoRequired:'Select a promo code for this campaign type',
       campaignWeekdaysRequired:'Select at least one weekday',campaignTimeInvalid:'Time must use the HH:MM format',
       campaignCreated:'Campaign created',campaignNone:'No campaigns yet',
       campaignEnabledNotice:'Campaign enabled',campaignDisabledNotice:'Campaign disabled',
@@ -812,6 +816,9 @@
     adminCloseInvestmentOps:{},
     activeInvoice:null,
     invoiceTimer:null,
+    invoicePollTimer:null,
+    invoicePollInFlight:false,
+    pendingStartParam:'',
     walletDirty:false,
     bootstrapInFlight:null
   };
@@ -1137,9 +1144,53 @@
         return false;
       }
       if (body && body.session_token) await saveTelegramSession(body.session_token);
+      if (body && body.start_param) state.pendingStartParam = String(body.start_param);
       clearToken();
       return true;
     } catch (_) { return false; }
+  }
+
+  function parsePromoStartParam(raw){
+    const value=String(raw||'').trim();
+    if(!value) return '';
+    const lower=value.toLowerCase();
+    if(lower.startsWith('ref_')) return '';
+    let body='';
+    if(lower.startsWith('promo_')) body=value.slice(6);
+    else if(lower.startsWith('promo-')) body=value.slice(6);
+    else return '';
+    const code=body.trim().toUpperCase();
+    if(!code || code.length>32) return '';
+    return code;
+  }
+  function resolvePromoStartParam(){
+    const key='novera_promo_start_applied';
+    try{ if(sessionStorage.getItem(key)==='1') return ''; }catch(_){}
+    const candidates=[
+      state.pendingStartParam,
+      tg && tg.initDataUnsafe ? tg.initDataUnsafe.start_param : '',
+      qs.get('tgWebAppStartParam') || qs.get('startapp') || qs.get('start_param') || ''
+    ];
+    for(const raw of candidates){
+      const code=parsePromoStartParam(raw);
+      if(code){
+        try{ sessionStorage.setItem(key,'1'); }catch(_){}
+        state.pendingStartParam='';
+        return code;
+      }
+    }
+    return '';
+  }
+  function applyPromoDeepLink(){
+    const code=resolvePromoStartParam();
+    if(!code) return;
+    const field=$('depositPromoCode');
+    if(field){
+      const current=String(field.value||'').trim();
+      if(!current || current.toUpperCase()===code) field.value=code;
+    }
+    switchView('wallet',{push:true});
+    toast(tr('promoDeepLinkApplied').replace('{code}',code),'success');
   }
 
 
@@ -1330,7 +1381,12 @@
   function renderLevelCards(data){
     const terms=data.terms||{}, rates=terms.referral_level_bps||[], personal=terms.referral_personal_thresholds_usdt||[], line=terms.referral_line_thresholds_usdt||[];
     const teamLevels=state.team&&state.team.levels?state.team.levels:[];
-    $('levelCards').innerHTML=rates.map((rate,i)=>{const s=teamLevels.find((x)=>Number(x.level)===i+1)||{};return `<article class="level-card"><div class="level-card-top"><span class="level-badge">${i+1}</span><span class="level-rate">${percent(rate)}</span></div><dl><div><dt>${esc(tr('members'))}</dt><dd>${esc(s.member_count||0)}</dd></div><div><dt>${esc(tr('turnover'))}</dt><dd>${money(s.deposited_minor)} USDT</dd></div><div><dt>${esc(tr('earned'))}</dt><dd>${money(s.earned_minor)} USDT</dd></div><div><dt>${esc(tr('personal'))}</dt><dd>${esc(personal[i]||0)} USDT</dd></div><div><dt>${esc(tr('line'))}</dt><dd>${esc(line[i]||0)} USDT</dd></div></dl></article>`;}).join('');
+    $('levelCards').innerHTML=rates.map((rate,i)=>{
+      const s=teamLevels.find((x)=>Number(x.level)===i+1)||{};
+      const personalNeed=Number(personal[i]||0);
+      const personalRow=personalNeed>0?`<div><dt>${esc(tr('personal'))}</dt><dd>${esc(personalNeed)} USDT</dd></div>`:'';
+      return `<article class="level-card"><div class="level-card-top"><span class="level-badge">${i+1}</span><span class="level-rate">${percent(rate)}</span></div><dl><div><dt>${esc(tr('members'))}</dt><dd>${esc(s.member_count||0)}</dd></div><div><dt>${esc(tr('turnover'))}</dt><dd>${money(s.deposited_minor)} USDT</dd></div><div><dt>${esc(tr('earned'))}</dt><dd>${money(s.earned_minor)} USDT</dd></div>${personalRow}<div><dt>${esc(tr('line'))}</dt><dd>${esc(line[i]||0)} USDT</dd></div></dl></article>`;
+    }).join('');
   }
 
   function updateNotificationBadge(){
@@ -1537,14 +1593,110 @@
   function stopInvoiceTimer(){
     if(state.invoiceTimer){clearInterval(state.invoiceTimer);state.invoiceTimer=null;}
   }
+  function stopInvoicePoll(){
+    if(state.invoicePollTimer){clearInterval(state.invoicePollTimer);state.invoicePollTimer=null;}
+    state.invoicePollInFlight=false;
+  }
+  function invoiceNumericId(invoice){
+    const value=invoice && (invoice.id!=null?invoice.id:invoice.invoice_id);
+    const id=Number(value);
+    return Number.isFinite(id) && id>0 ? id : 0;
+  }
+  function applyInvoiceStatusPayload(invoice, status){
+    if(!invoice || !status) return invoice;
+    const next={...invoice};
+    next.id=status.id!=null?status.id:invoiceNumericId(invoice);
+    next.invoice_id=next.id;
+    next.status=status.status;
+    next.expires_at=status.expires_at!=null?status.expires_at:invoice.expires_at;
+    if(status.exact_amount!=null) next.exact_amount=status.exact_amount;
+    if(status.bonus_usdt!=null) next.bonus_usdt=status.bonus_usdt;
+    if(status.effective_principal_usdt!=null) next.effective_principal_usdt=status.effective_principal_usdt;
+    next.deposit_id=status.deposit_id;
+    next.credited=Boolean(status.credited);
+    return next;
+  }
+  function invoiceUiPhase(invoice){
+    const now=Math.floor(Date.now()/1000);
+    const expiresAt=Number(invoice&&invoice.expires_at||0);
+    const status=String(invoice&&invoice.status||'pending');
+    if(invoice&&invoice.credited) return 'credited';
+    if(status==='paid') return 'credited';
+    if(status==='expired' || (expiresAt>0 && expiresAt<=now)) return 'expired';
+    if(state.invoicePollInFlight) return 'detecting';
+    return 'awaiting';
+  }
+  function updateInvoiceStatusUi(invoice){
+    const box=$('invoiceBox'); if(!box||!invoice) return;
+    const phase=invoiceUiPhase(invoice);
+    const statusStrong=box.querySelector('[data-invoice-status]');
+    const liveStrong=box.querySelector('[data-invoice-live]');
+    const assetsBtn=box.querySelector('[data-invoice-assets]');
+    let statusLabel=tr('invoicePending');
+    let statusClass='queued';
+    let liveLabel=tr('invoicePending');
+    if(phase==='detecting'){ statusLabel=tr('invoiceDetecting'); statusClass='queued'; liveLabel=tr('invoiceDetecting'); }
+    else if(phase==='credited'){ statusLabel=tr('invoiceCredited'); statusClass='confirmed'; liveLabel=tr('invoiceCredited'); }
+    else if(phase==='expired'){ statusLabel=tr('invoiceExpired'); statusClass='failed'; liveLabel=tr('invoiceExpired'); }
+    if(statusStrong){ statusStrong.textContent=statusLabel; statusStrong.className=`tag ${statusClass}`; }
+    if(liveStrong) liveStrong.textContent=liveLabel;
+    if(assetsBtn) assetsBtn.classList.toggle('hidden', phase!=='credited');
+  }
+  async function pollActiveInvoice({manual=false}={}){
+    const invoice=state.activeInvoice;
+    const invoiceId=invoiceNumericId(invoice);
+    if(!invoiceId) return;
+    if(document.visibilityState==='hidden' && !manual) return;
+    if(state.invoicePollInFlight) return;
+    const phase=invoiceUiPhase(invoice);
+    if(phase==='credited' || phase==='expired'){
+      stopInvoicePoll();
+      updateInvoiceStatusUi(invoice);
+      return;
+    }
+    state.invoicePollInFlight=true;
+    updateInvoiceStatusUi(invoice);
+    try{
+      const status=await api(`/api/deposits/invoice/${invoiceId}`,{cache:'no-store'});
+      const next=applyInvoiceStatusPayload(invoice, status);
+      state.activeInvoice=next;
+      try{sessionStorage.setItem('novera_active_invoice', JSON.stringify(next));}catch(_){}
+      updateInvoiceStatusUi(next);
+      const nextPhase=invoiceUiPhase(next);
+      if(nextPhase==='credited'){
+        stopInvoicePoll();
+        stopInvoiceTimer();
+        toast(tr('invoiceCredited'),'success');
+        try{ await refreshBootstrap(); }catch(_){}
+      } else if(nextPhase==='expired'){
+        stopInvoicePoll();
+        stopInvoiceTimer();
+      }
+    }catch(e){
+      if(manual) handleApiError(e);
+    }finally{
+      state.invoicePollInFlight=false;
+      if(state.activeInvoice) updateInvoiceStatusUi(state.activeInvoice);
+    }
+  }
+  function startInvoicePoll(invoice){
+    stopInvoicePoll();
+    const invoiceId=invoiceNumericId(invoice);
+    if(!invoiceId) return;
+    const phase=invoiceUiPhase(invoice);
+    if(phase==='credited' || phase==='expired') return;
+    state.invoicePollTimer=setInterval(()=>pollActiveInvoice(),6000);
+    setTimeout(()=>pollActiveInvoice(),1200);
+  }
   function renderInvoice(invoice){
     const box=$('invoiceBox'); if(!box||!invoice)return;
+    if(invoice.id==null && invoice.invoice_id!=null) invoice={...invoice,id:invoice.invoice_id};
     const address=String(invoice.treasury_address||'');
     const exact=String(invoice.exact_amount||'');
     const amountLabel=`${exact} USDT`;
     const token=String(invoice.token_symbol||'USDT');
     const chainId=invoice.chain_id!=null?String(invoice.chain_id):'—';
-    const invoiceId=invoice.id!=null?String(invoice.id):'';
+    const invoiceId=invoiceNumericId(invoice);
     const expiresAt=Number(invoice.expires_at||0);
     const tick=()=>{
       const now=Math.floor(Date.now()/1000);
@@ -1556,13 +1708,16 @@
         : (secondsLeft>=60
             ? `${minutesLeft} ${tr('invoiceMinutes')}`
             : `${secondsLeft} ${tr('invoiceSeconds')}`);
-      const statusLabel=expired?tr('invoiceExpired'):tr('invoicePending');
-      const statusClass=expired?'failed':'queued';
       const ttlStrong=box.querySelector('[data-invoice-ttl]');
-      const statusStrong=box.querySelector('[data-invoice-status]');
       if(ttlStrong) ttlStrong.textContent=countdownLabel;
-      if(statusStrong){statusStrong.textContent=statusLabel;statusStrong.className=`tag ${statusClass}`;}
-      if(expired) stopInvoiceTimer();
+      if(expired && !invoice.credited){
+        invoice.status='expired';
+        updateInvoiceStatusUi(invoice);
+        stopInvoiceTimer();
+        stopInvoicePoll();
+      } else {
+        updateInvoiceStatusUi(invoice);
+      }
     };
     const reusedNote=invoice.reused?`<div class="invoice-reused">${esc(tr('invoiceReused'))}</div>`:'';
     const bonusUsdt=Number(invoice.bonus_usdt||0);
@@ -1571,10 +1726,11 @@
     box.classList.remove('hidden');
     box.innerHTML=`
       <div class="invoice-head">
-        <div><p class="overline">${esc(tr('invoiceStatus'))}</p><strong class="tag queued" data-invoice-status>${esc(tr('invoicePending'))}</strong>${invoiceId?`<small class="invoice-id">#${esc(invoiceId)}</small>`:''}</div>
+        <div><p class="overline">${esc(tr('invoiceStatus'))}</p><strong class="tag queued" data-invoice-status>${esc(tr('invoicePending'))}</strong>${invoiceId?`<small class="invoice-id">#${esc(String(invoiceId))}</small>`:''}</div>
         <div class="invoice-ttl"><span>${esc(tr('invoiceCountdown'))}</span><strong data-invoice-ttl>—</strong></div>
       </div>
       ${reusedNote}
+      <div class="invoice-line"><span>${esc(tr('invoiceStatus'))}</span><strong data-invoice-live>${esc(tr('invoicePending'))}</strong></div>
       <div class="invoice-hero-amount">
         <span>${esc(tr('invoiceExactTitle'))}</span>
         <strong class="money">${esc(amountLabel)}</strong>
@@ -1590,6 +1746,8 @@
         <button type="button" class="touch-target" data-copy-invoice="amount">${esc(tr('copyAmount'))}</button>
         <button type="button" class="touch-target" data-copy-invoice="address">${esc(tr('copyAddress'))}</button>
         <button type="button" class="touch-target" data-copy-invoice="all">${esc(tr('copyAll'))}</button>
+        <button type="button" class="touch-target" data-invoice-refresh>${esc(tr('invoiceRefresh'))}</button>
+        <button type="button" class="touch-target hidden" data-invoice-assets>${esc(tr('invoiceOpenAssets'))}</button>
       </div>`;
     box.querySelectorAll('[data-copy-invoice]').forEach((b)=>b.addEventListener('click',()=>{
       const mode=b.dataset.copyInvoice;
@@ -1597,9 +1755,14 @@
       else if(mode==='amount') copyText(exact,'copyAmountDone');
       else copyText(allCopy,'copyAllDone');
     }));
+    const refreshBtn=box.querySelector('[data-invoice-refresh]');
+    if(refreshBtn) refreshBtn.addEventListener('click',()=>pollActiveInvoice({manual:true}));
+    const assetsBtn=box.querySelector('[data-invoice-assets]');
+    if(assetsBtn) assetsBtn.addEventListener('click',()=>switchView('assets',{push:true}));
     stopInvoiceTimer();
     tick();
     state.invoiceTimer=setInterval(tick,1000);
+    startInvoicePoll(invoice);
   }
 
   function showSessionError(){
@@ -2032,6 +2195,7 @@
     const current=select.value;
     select.innerHTML=`<option value="">${esc(tr('campaignPromoNone'))}</option>`+promos.map((p)=>`<option value="${esc(p.id)}">${esc(p.code)} · ${esc(promoBonusLabel(p))}</option>`).join('');
     if(promos.some((p)=>String(p.id)===current)) select.value=current;
+    syncCampaignComposer();
   }
   function renderAdminPromoList(){
     const promos=state.adminCache.promos||[];
@@ -2089,7 +2253,7 @@
       const promo=c.promo_code_id?promos.find((p)=>Number(p.id)===Number(c.promo_code_id)):null;
       const promoLine=promo?`<small>${esc(tr('campaignPromoSelect'))}: ${esc(promo.code)}</small>`:'';
       const runLine=`${esc(tr('campaignNextRun'))}: ${esc(fmtDate(c.next_run_at))}${c.last_sent_at?' · '+esc(tr('campaignLastRun'))+': '+esc(fmtDate(c.last_sent_at)):''}`;
-      return `<article class="list-card"><div class="list-card-header"><div><strong>${esc(campaignKindLabel(c.kind))} · ${esc(broadcastAudienceLabel(c.audience))}</strong><small>${esc(campaignScheduleLabel(c))}</small></div><span class="tag ${c.enabled?'active':'failed'}">${esc(c.enabled?tr('statusEnabled'):tr('statusDisabled'))}</span></div>${promoLine}<small class="broadcast-preview-text">${esc(c.message_html||'')}</small><small>${runLine}</small><div class="admin-actions"><button class="admin-action touch-target" type="button" data-toggle-campaign="${esc(c.id)}" data-enabled="${c.enabled?'1':'0'}">${esc(c.enabled?tr('disableAction'):tr('enableAction'))}</button><button class="admin-action touch-target" type="button" data-run-campaign="${esc(c.id)}">${esc(tr('runCampaignNow'))}</button></div></article>`;
+      return `<article class="list-card"><div class="list-card-header"><div><strong>${esc(campaignKindLabel(c.kind))} · ${esc(broadcastAudienceLabel(c.audience))}</strong><small>${esc(campaignScheduleLabel(c))}</small></div><span class="tag ${c.enabled?'active':'failed'}">${esc(c.enabled?tr('statusEnabled'):tr('statusDisabled'))}</span></div>${promoLine}<small class="broadcast-preview-text">${esc(renderCampaignMessagePreview(c.message_html||'', promo))}</small><small>${runLine}</small><div class="admin-actions"><button class="admin-action touch-target" type="button" data-toggle-campaign="${esc(c.id)}" data-enabled="${c.enabled?'1':'0'}">${esc(c.enabled?tr('disableAction'):tr('enableAction'))}</button><button class="admin-action touch-target" type="button" data-run-campaign="${esc(c.id)}">${esc(tr('runCampaignNow'))}</button></div></article>`;
     }).join(''):`<div class="empty-state">${esc(tr('campaignNone'))}</div>`;
     $('adminCampaignList').querySelectorAll('[data-toggle-campaign]').forEach((b)=>b.addEventListener('click',()=>toggleCampaign(b.dataset.toggleCampaign,b.dataset.enabled==='1')));
     $('adminCampaignList').querySelectorAll('[data-run-campaign]').forEach((b)=>b.addEventListener('click',()=>runCampaignNow(b.dataset.runCampaign)));
@@ -2109,6 +2273,54 @@
       await loadAdminCampaigns();
     }catch(e){handleApiError(e);}
   }
+
+  const DEFAULT_PROMO_CAMPAIGN_MESSAGE = '🎁 <b>Промокод NOVERA</b>\n\nБонус к депозиту: <b>{{bonus_label}}</b>\n\nВаш код:\n<code>{{code}}</code>\n\nОткройте по ссылке:\nhttps://t.me/{{bot_username}}?start=promo_{{code}}\n\nИли в NOVERA → <b>Пополнить</b> → вставьте промокод при создании депозита.\nБонус увеличивает сумму депозита. Один раз на пользователя.';
+  const LEGACY_PROMO_CAMPAIGN_MESSAGE = '🎁 <b>Промокод NOVERA</b>\n\nБонус к депозиту: <b>{{bonus_label}}</b>\n\nВаш код:\n<code>{{code}}</code>\n\nОткройте NOVERA → <b>Пополнить</b> → вставьте промокод при создании депозита.\nБонус увеличивает сумму депозита. Один раз на пользователя.';
+  const DEFAULT_PARTNER_CAMPAIGN_MESSAGE = '👥 <b>NOVERA Partner Network</b>\n\nПриглашайте партнёров по своей ссылке и получайте процент с их депозитов на 5 уровнях.\nДоступ к уровням открывается по обороту 1-й линии — личный депозит не требуется.\n\nОткройте вкладку <b>Команда</b> в NOVERA и скопируйте партнёрскую ссылку.';
+  function campaignDefaultMessage(kind){
+    if(kind==='promo') return DEFAULT_PROMO_CAMPAIGN_MESSAGE;
+    if(kind==='partner') return DEFAULT_PARTNER_CAMPAIGN_MESSAGE;
+    return '';
+  }
+  function campaignMessageLooksDefault(value){
+    const v=String(value||'').trim();
+    return !v || v===DEFAULT_PROMO_CAMPAIGN_MESSAGE || v===LEGACY_PROMO_CAMPAIGN_MESSAGE || v===DEFAULT_PARTNER_CAMPAIGN_MESSAGE;
+  }
+  function campaignBotUsername(){
+    const link=String(state.data&&state.data.referral_link||'');
+    const match=link.match(/t\.me\/([^?/]+)/i);
+    return match?match[1]:'NoveraBot';
+  }
+  function renderCampaignMessagePreview(message, promo){
+    let out=String(message||'');
+    out=out.split('{{bot_username}}').join(campaignBotUsername());
+    if(!promo) return out;
+    const code=String(promo.code||'');
+    const bonus=promoBonusLabel(promo);
+    return out.split('{{code}}').join(code).split('{{bonus_label}}').join(bonus);
+  }
+  function syncCampaignComposer(){
+    const kind=$('campaignKind')?$('campaignKind').value:'custom';
+    const promoSelect=$('campaignPromo');
+    if(promoSelect){
+      promoSelect.disabled = kind!=='promo';
+      if(kind!=='promo') promoSelect.value='';
+    }
+    const msg=$('campaignMessage');
+    const hint=$('campaignMessageHint');
+    if(hint) hint.textContent = (kind==='promo' || kind==='partner') ? tr('campaignMessageHint') : '';
+    if(msg && campaignMessageLooksDefault(msg.value)){
+      msg.value = campaignDefaultMessage(kind);
+    }
+    const preview=$('campaignMessagePreview');
+    if(preview && msg){
+      const promoId=promoSelect?promoSelect.value:'';
+      const promo=(state.adminCache.promos||[]).find((p)=>String(p.id)===String(promoId));
+      const rendered=renderCampaignMessagePreview(msg.value, kind==='promo'?promo:null);
+      preview.innerHTML = sanitizeTelegramHtml(rendered) || `<span class="telegram-preview-empty">${esc(tr('broadcastPreviewEmpty')||'')}</span>`;
+    }
+  }
+
   function updateCampaignScheduleFields(){
     const weekly=$('campaignScheduleMode').value==='weekly';
     $('campaignWeekdaysRow').classList.toggle('hidden',!weekly);
@@ -2124,7 +2336,8 @@
     const promoSelect=$('campaignPromo').value;
     const enabled=$('campaignEnabledInput').checked;
     const weekdays=Array.from($('campaignWeekdaysRow').querySelectorAll('.segment.active')).map((b)=>Number(b.dataset.weekday));
-    if(!message){toast(tr('campaignMessageRequired'),'error');return;}
+    if(!message && kind==='custom'){toast(tr('campaignMessageRequired'),'error');return;}
+    if(!message) message=campaignDefaultMessage(kind);
     if(kind==='promo' && !promoSelect){toast(tr('campaignPromoRequired'),'error');return;}
     if(scheduleMode==='weekly' && !weekdays.length){toast(tr('campaignWeekdaysRequired'),'error');return;}
     if(!/^\d{1,2}:\d{2}$/.test(timeUtc)){toast(tr('campaignTimeInvalid'),'error');return;}
@@ -2135,6 +2348,7 @@
       await api('/api/admin/campaigns',{method:'POST',body:JSON.stringify(payload)});
       toast(tr('campaignCreated'),'success');
       $('campaignMessage').value='';
+      syncCampaignComposer();
       await loadAdminCampaigns();
     }catch(e){handleApiError(e);}finally{btn.disabled=false;}
   }
@@ -2530,11 +2744,11 @@
     syncTelegramContext();
     await exchangeBotLogin();
     restorePersistedInvoice();
-    try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);const view=qs.get('view');if(view==='admin'&&data.auth&&data.auth.is_admin)switchView('admin');else if(view&&document.getElementById(`view-${view}`))switchView(view);loadNotifications({silent:true});startPollingTimers();}catch(e){
+    try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);const view=qs.get('view');if(view==='admin'&&data.auth&&data.auth.is_admin)switchView('admin');else if(view&&document.getElementById(`view-${view}`))switchView(view);applyPromoDeepLink();loadNotifications({silent:true});startPollingTimers();}catch(e){
       // An expired stored token may be repaired by current signed initData.
       if(e&&e.status===401&&state.telegramSessionToken){
         await clearTelegramSession(); syncTelegramContext();
-        try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);loadNotifications({silent:true});startPollingTimers();return;}catch(e2){e=e2;}
+        try{const data=verifyBootstrapIdentity(await captureAuthSession(await api('/api/bootstrap',{cache:'no-store'})));render(data);applyPromoDeepLink();loadNotifications({silent:true});startPollingTimers();return;}catch(e2){e=e2;}
       }
       await handleApiError(e);$('heroSubtitle').textContent=apiErrorText(e&&e.detail,e&&e.status)||tr('authFailed');
     }
@@ -2588,8 +2802,12 @@
   $('createPromoBtn').addEventListener('click',createPromo);
   $('createCampaignBtn').addEventListener('click',createCampaign);
   $('campaignScheduleMode').addEventListener('change',updateCampaignScheduleFields);
+  if($('campaignKind')) $('campaignKind').addEventListener('change',syncCampaignComposer);
+  if($('campaignPromo')) $('campaignPromo').addEventListener('change',syncCampaignComposer);
+  if($('campaignMessage')) $('campaignMessage').addEventListener('input',syncCampaignComposer);
   $('campaignWeekdaysRow').addEventListener('click',(e)=>{const b=e.target.closest('[data-weekday]');if(b)b.classList.toggle('active');});
   updateCampaignScheduleFields();
+  syncCampaignComposer();
 
   window.addEventListener('pageshow',refreshTelegramAccountContext);
   window.addEventListener('focus',refreshTelegramAccountContext);

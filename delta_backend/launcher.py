@@ -97,11 +97,12 @@ def _build_welcome_text(
         "После цикла можно открыть новый депозит на актуальных условиях.\n\n"
         "──────────────\n\n"
         "🤝 <b>Partner Network</b>\n"
-        "<code>L1 8%</code> · деп. 50 · линия 100\n"
-        "<code>L2 4%</code> · деп. 100 · линия 300\n"
-        "<code>L3 2,5%</code> · деп. 300 · линия 500\n"
-        "<code>L4 1,5%</code> · деп. 500 · линия 1 500\n"
-        "<code>L5 1%</code> · деп. 1 000 · линия 5 000\n\n"
+        "Доступ к уровням — по обороту 1-й линии (личный депозит не требуется).\n"
+        "<code>L1 8%</code> · линия 100\n"
+        "<code>L2 4%</code> · линия 300\n"
+        "<code>L3 2,5%</code> · линия 500\n"
+        "<code>L4 1,5%</code> · линия 1 500\n"
+        "<code>L5 1%</code> · линия 5 000\n\n"
         "──────────────\n\n"
         "⚡ Арбитраж · Авто-начисления · Партнёрка"
         + (f"\n\n{footer}" if footer else "")
@@ -170,6 +171,21 @@ def create_dispatcher(
             parts = message.text.split(maxsplit=1)
             if len(parts) == 2 and parts[1].strip():
                 start_param = parts[1].strip()[:128]
+
+        # Bind referral at /start (not only when Mini App opens). First-touch only.
+        if repository is not None and message.from_user is not None:
+            referrer_id = None
+            if start_param and start_param.startswith("ref_"):
+                raw = start_param.removeprefix("ref_")
+                if raw.isdigit():
+                    referrer_id = int(raw)
+            await repository.ensure_user(
+                message.from_user.id,
+                message.from_user.username,
+                message.from_user.first_name or "",
+                message.from_user.language_code,
+                referrer_id,
+            )
 
         login_token = await _issue_login_token(
             repository,
@@ -248,12 +264,22 @@ def create_dispatcher(
         goal = stats.get("next_goal")
         if isinstance(goal, dict):
             rate = float(int(goal.get("rate_bps") or 0)) / 100
+            remaining_personal = int(goal.get("remaining_personal_minor") or 0)
+            remaining_line = int(goal.get("remaining_line_minor") or 0)
             text += (
                 "\n\n🎯 <b>Следующая цель</b>\n"
-                f"LEVEL {int(goal.get('level') or 0):02d} — <b>{rate:g}%</b>\n"
-                f"Осталось личного депозита: <b>{minor_to_text(int(goal.get('remaining_personal_minor') or 0))} USDT</b>\n"
-                f"Осталось оборота линии: <b>{minor_to_text(int(goal.get('remaining_line_minor') or 0))} USDT</b>"
+                f"LEVEL {int(goal.get('level') or 0):02d} — <b>{rate:g}%</b>"
             )
+            if remaining_personal > 0:
+                text += (
+                    f"\nОсталось личного депозита: <b>{minor_to_text(remaining_personal)} USDT</b>"
+                )
+            if remaining_line > 0:
+                text += (
+                    f"\nОсталось оборота линии: <b>{minor_to_text(remaining_line)} USDT</b>"
+                )
+            if remaining_personal <= 0 and remaining_line <= 0:
+                text += "\nУсловия следующей цели уже выполнены."
         else:
             text += "\n\n🏆 <b>Все 5 уровней открыты.</b>"
         keyboard = InlineKeyboardMarkup(

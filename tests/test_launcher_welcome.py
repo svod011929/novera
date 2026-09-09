@@ -18,6 +18,9 @@ def test_welcome_text_uses_runtime_links() -> None:
     assert "10% / 24H" in text
     assert "L1 8%" in text
     assert "L5 1%" in text
+    assert "личный депозит не требуется" in text
+    assert "линия 100" in text
+    assert "деп. 50" not in text
     assert 'href="https://t.me/NoveraBot"' in text
     assert 'href="https://t.me/NoveraSupport"' in text
     assert "Поддержка" in text

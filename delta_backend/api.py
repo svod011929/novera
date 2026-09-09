@@ -46,6 +46,7 @@ from .repository import (
     CAMPAIGN_MESSAGE_MAX_LENGTH,
     DeltaRepository,
     RepositoryError,
+    default_campaign_message,
 )
 from .runtime_secrets import ChainSecretBundle, RuntimeSecretError, RuntimeSecretStore
 from .services.blockchain import EvmTokenClient
@@ -308,7 +309,7 @@ class CampaignCreateRequest(BaseModel):
     interval_hours: int = Field(default=24, ge=1, le=CAMPAIGN_MAX_INTERVAL_HOURS)
     weekdays: list[int] = Field(default_factory=list, max_length=7)
     time_utc: str = Field(default="12:00", max_length=5)
-    message_html: str = Field(min_length=1, max_length=CAMPAIGN_MESSAGE_MAX_LENGTH)
+    message_html: str = Field(default="", max_length=CAMPAIGN_MESSAGE_MAX_LENGTH)
     promo_code_id: int | None = None
     enabled: bool = True
 
@@ -1643,6 +1644,7 @@ async def exchange_bot_login(
                     CLIENT_SESSION_TTL_SECONDS,
                 ),
                 "expires_in": CLIENT_SESSION_TTL_SECONDS,
+                "start_param": telegram_user.start_param,
             }
         )
         response.delete_cookie(
@@ -1660,6 +1662,7 @@ async def exchange_bot_login(
             "status": "ok",
             "mode": "external",
             "expires_in": business.telegram_session_ttl_seconds,
+            "start_param": telegram_user.start_param,
         }
     )
     response.set_cookie(
@@ -1877,6 +1880,7 @@ async def create_invoice(
         or (int(invoice["exact_minor"]) + bonus_minor)
     )
     return {
+        "id": invoice["invoice_id"],
         "invoice_id": invoice["invoice_id"],
         "exact_amount": minor_to_text(int(invoice["exact_minor"]), trim=False),
         "expires_at": invoice["expires_at"],
@@ -1889,6 +1893,19 @@ async def create_invoice(
         "bonus_usdt": minor_to_text(bonus_minor, trim=False),
         "effective_principal_usdt": minor_to_text(effective_principal_minor, trim=False),
     }
+
+
+@app.get("/api/deposits/invoice/{invoice_id}")
+async def get_deposit_invoice(
+    invoice_id: int,
+    request: Request,
+    user: AuthenticatedUser = Depends(current_user),
+) -> dict[str, object]:
+    repository: DeltaRepository = request.app.state.repository
+    invoice = await repository.get_user_invoice(user.telegram_id, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return invoice
 
 
 @app.get("/api/admin/summary")
@@ -2472,7 +2489,10 @@ async def admin_create_campaign(
     user: AuthenticatedUser = Depends(admin_user),
 ) -> dict[str, object]:
     await enforce_mutation_limit(request, user, "campaign")
-    message = sanitize_telegram_html(payload.message_html)
+    raw_message = str(payload.message_html or "").strip() or default_campaign_message(
+        payload.kind
+    )
+    message = sanitize_telegram_html(raw_message)
     if not message:
         raise HTTPException(status_code=422, detail="Campaign message is required")
     repository: DeltaRepository = request.app.state.repository
