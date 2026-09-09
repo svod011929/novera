@@ -2348,6 +2348,292 @@ class DeltaRepository:
             return 0, "promo_cap_reached"
         return bonus_minor, None
 
+    async def list_unmatched_chain_deposits(
+        self, *, limit: int = 50
+    ) -> list[dict[str, object]]:
+        connection = self._connection()
+        capped = max(1, min(int(limit), 200))
+        async with self._lock:
+            cursor = await connection.execute(
+                "SELECT * FROM chain_deposits "
+                "WHERE matched = 0 ORDER BY id DESC LIMIT ?",
+                (capped,),
+            )
+            rows = [dict(row) for row in await cursor.fetchall()]
+        for row in rows:
+            row["amount"] = minor_to_text(int(row["amount_minor"]))
+        return rows
+
+    async def admin_match_chain_deposit(
+        self,
+        chain_deposit_id: int,
+        invoice_id: int,
+        *,
+        admin_id: int,
+        reason: str,
+    ) -> dict[str, object]:
+        clean_reason = str(reason or "").strip()
+        if not clean_reason:
+            raise RepositoryError("Recovery reason is required")
+        clean_reason = clean_reason[:500]
+        now = int(time.time())
+
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT * FROM chain_deposits WHERE id = ?",
+                (int(chain_deposit_id),),
+            )
+            chain_deposit = await cursor.fetchone()
+            if chain_deposit is None:
+                raise RepositoryError("Chain deposit not found")
+            if bool(chain_deposit["matched"]) or chain_deposit["invoice_id"] is not None:
+                raise RepositoryError("Chain deposit is already matched")
+
+            cursor = await connection.execute(
+                """
+                SELECT invoice.*, users.payout_address, users.blocked
+                FROM deposit_invoices AS invoice
+                LEFT JOIN users ON users.telegram_id = invoice.user_id
+                WHERE invoice.id = ?
+                """,
+                (int(invoice_id),),
+            )
+            invoice = await cursor.fetchone()
+            if invoice is None:
+                raise RepositoryError("Invoice not found")
+
+            status = str(invoice["status"])
+            if status == "pending" and int(invoice["expires_at"]) <= now:
+                await connection.execute(
+                    "UPDATE deposit_invoices SET status = 'expired' "
+                    "WHERE id = ? AND status = 'pending'",
+                    (int(invoice_id),),
+                )
+                status = "expired"
+            if status == "paid":
+                raise RepositoryError("Invoice is already paid")
+            if status not in {"pending", "expired"}:
+                raise RepositoryError("Invoice is not recoverable")
+            if bool(invoice["blocked"]):
+                raise RepositoryError("Account is blocked")
+            payout_address = str(invoice["payout_address"] or "").strip()
+            if not payout_address:
+                raise RepositoryError("User payout wallet is not configured")
+
+            cursor = await connection.execute(
+                "SELECT 1 FROM deposits WHERE invoice_id = ?",
+                (int(invoice_id),),
+            )
+            if await cursor.fetchone() is not None:
+                raise RepositoryError("Invoice already has a deposit")
+
+            tx_hash = str(chain_deposit["tx_hash"])
+            cursor = await connection.execute(
+                """
+                UPDATE deposit_invoices
+                SET status = 'paid', tx_hash = ?, paid_at = ?
+                WHERE id = ? AND status IN ('pending', 'expired')
+                """,
+                (tx_hash, now, int(invoice_id)),
+            )
+            if not cursor.rowcount:
+                raise RepositoryError("Invoice is not recoverable")
+            cursor = await connection.execute(
+                """
+                UPDATE chain_deposits
+                SET invoice_id = ?, matched = 1
+                WHERE id = ? AND matched = 0 AND invoice_id IS NULL
+                """,
+                (int(invoice_id), int(chain_deposit_id)),
+            )
+            if not cursor.rowcount:
+                raise RepositoryError("Chain deposit is already matched")
+
+            bonus_minor = 0
+            promo_code_id = invoice["promo_code_id"]
+            promo_code_id = int(promo_code_id) if promo_code_id is not None else None
+            skipped_promo_code_id = promo_code_id
+            promo_skip_reason: str | None = None
+            if promo_code_id is not None:
+                bonus_minor, promo_skip_reason = await self._reserve_promo_redemption(
+                    connection,
+                    promo_code_id=promo_code_id,
+                    user_id=int(invoice["user_id"]),
+                    base_minor=int(invoice["base_minor"]),
+                    now=now,
+                )
+                if promo_skip_reason is not None:
+                    bonus_minor = 0
+                    promo_code_id = None
+
+            amount_minor = int(chain_deposit["amount_minor"])
+            principal_minor = amount_minor + bonus_minor
+            cursor = await connection.execute(
+                """
+                INSERT INTO deposits(
+                    user_id, invoice_id, principal_minor, payout_address,
+                    next_payout_at, opened_at, bonus_minor, promo_code_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(invoice["user_id"]),
+                    int(invoice_id),
+                    principal_minor,
+                    payout_address,
+                    now + 86_400,
+                    now,
+                    bonus_minor,
+                    promo_code_id,
+                ),
+            )
+            deposit_id = int(cursor.lastrowid)
+
+            if promo_code_id is not None:
+                try:
+                    await connection.execute(
+                        """
+                        INSERT INTO promo_redemptions(
+                            promo_code_id, user_id, deposit_id, invoice_id,
+                            bonus_minor, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            promo_code_id,
+                            int(invoice["user_id"]),
+                            deposit_id,
+                            int(invoice_id),
+                            bonus_minor,
+                            now,
+                        ),
+                    )
+                except aiosqlite.IntegrityError:
+                    await connection.execute(
+                        "UPDATE promo_codes SET redemption_count = redemption_count - 1 "
+                        "WHERE id = ? AND redemption_count > 0",
+                        (promo_code_id,),
+                    )
+                    await connection.execute(
+                        "UPDATE deposits SET principal_minor = ?, bonus_minor = 0, "
+                        "promo_code_id = NULL WHERE id = ?",
+                        (amount_minor, deposit_id),
+                    )
+                    principal_minor = amount_minor
+                    bonus_minor = 0
+                    promo_code_id = None
+                    promo_skip_reason = "promo_redemption_conflict"
+
+            if promo_skip_reason is not None:
+                await connection.execute(
+                    "INSERT INTO audit_events(event_type, details, created_at) "
+                    "VALUES ('promo_redeem_skipped', ?, ?)",
+                    (
+                        f"deposit={deposit_id};invoice={int(invoice_id)};"
+                        f"promo={skipped_promo_code_id};reason={promo_skip_reason}",
+                        now,
+                    ),
+                )
+
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) "
+                "VALUES ('deposit_recovery_matched', ?, ?)",
+                (
+                    f"admin={int(admin_id)};chain_deposit={int(chain_deposit_id)};"
+                    f"invoice={int(invoice_id)};deposit={deposit_id};tx={tx_hash};"
+                    f"amount_minor={amount_minor};principal_minor={principal_minor};"
+                    f"bonus_minor={bonus_minor};reason={clean_reason}",
+                    now,
+                ),
+            )
+            await connection.execute(
+                "INSERT INTO audit_events(event_type, details, created_at) "
+                "VALUES ('deposit_opened', ?, ?)",
+                (f"deposit={deposit_id};tx={tx_hash}", now),
+            )
+
+            amount_text = minor_to_text(amount_minor)
+            principal_text = minor_to_text(principal_minor)
+            if bonus_minor > 0:
+                bonus_text = minor_to_text(bonus_minor)
+                body = (
+                    f"Зачислено {amount_text} USDT + бонус {bonus_text} USDT = "
+                    f"{principal_text} USDT. Депозит #{deposit_id} активирован."
+                )
+                telegram_html = (
+                    "✅ <b>Пополнение подтверждено</b>\n\n"
+                    f"💰 Зачислено: <b>{amount_text} USDT</b>\n"
+                    f"🎁 Бонус: <b>+{bonus_text} USDT</b>\n"
+                    f"📦 Депозит: <b>#{deposit_id}</b> на сумму "
+                    f"<b>{principal_text} USDT</b>\n"
+                    "⏱ Первая выплата — через 24 часа."
+                )
+            else:
+                body = (
+                    f"Зачислено {principal_text} USDT. "
+                    f"Депозит #{deposit_id} активирован."
+                )
+                telegram_html = (
+                    "✅ <b>Пополнение подтверждено</b>\n\n"
+                    f"💰 Зачислено: <b>{principal_text} USDT</b>\n"
+                    f"📦 Депозит: <b>#{deposit_id}</b>\n"
+                    "⏱ Первая выплата — через 24 часа."
+                )
+            await self._queue_notification(
+                connection,
+                user_id=int(invoice["user_id"]),
+                category="deposit",
+                event_type="deposit_confirmed",
+                title="Пополнение подтверждено",
+                body=body,
+                telegram_html=telegram_html,
+                dedupe_key=f"deposit-confirmed:{deposit_id}",
+                data={
+                    "target_view": "assets",
+                    "deposit_id": deposit_id,
+                    "chain_deposit_id": int(chain_deposit_id),
+                    "amount_minor": amount_minor,
+                    "bonus_minor": bonus_minor,
+                    "principal_minor": principal_minor,
+                    "tx_hash": tx_hash,
+                    "source": "admin_recovery",
+                },
+                created_at=now,
+            )
+            if promo_skip_reason is not None:
+                await self._queue_notification(
+                    connection,
+                    user_id=int(invoice["user_id"]),
+                    category="deposit",
+                    event_type="promo_skipped",
+                    title="Промокод не применён",
+                    body=(
+                        "Промокод к этому пополнению не применён — бонус, показанный "
+                        "в счёте, не зачислен. Депозит открыт на фактическую сумму "
+                        "перевода."
+                    ),
+                    telegram_html=(
+                        "⚠️ <b>Промокод не применён</b>\n\n"
+                        "Бонус, показанный в счёте, не зачислен — депозит открыт "
+                        "на фактическую сумму перевода."
+                    ),
+                    dedupe_key=f"deposit-promo-skipped:{deposit_id}",
+                    data={
+                        "target_view": "assets",
+                        "deposit_id": deposit_id,
+                        "promo_skip_reason": promo_skip_reason,
+                    },
+                    created_at=now,
+                )
+
+            return {
+                "deposit_id": deposit_id,
+                "invoice_id": int(invoice_id),
+                "chain_deposit_id": int(chain_deposit_id),
+                "principal_minor": principal_minor,
+                "bonus_minor": bonus_minor,
+                "tx_hash": tx_hash,
+                "reused": False,
+            }
+
     async def apply_transfer(self, transfer: TransferEvent) -> dict[str, object]:
         now = int(time.time())
         async with self.transaction() as connection:
