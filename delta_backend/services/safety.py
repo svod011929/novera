@@ -16,6 +16,7 @@ from ..backup import backup_database
 from ..config import Settings
 from ..repository import DeltaRepository
 from .blockchain import EvmTokenClient
+from .ops_chat import OpsChatNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -99,12 +100,14 @@ class SafetyMonitor:
         bot_token: str,
         runtime: SafetyRuntime,
         circuit: PayoutCircuitBreaker,
+        ops_chat: OpsChatNotifier | None = None,
     ) -> None:
         self.repository = repository
         self.settings = settings
         self.chain = chain
         self.runtime = runtime
         self.circuit = circuit
+        self.ops_chat = ops_chat
         self.bot = Bot(bot_token)
         self._last_integrity_check = 0.0
         self._last_backup_attempt = 0.0
@@ -236,6 +239,14 @@ class SafetyMonitor:
             except Exception as exc:
                 logger.warning("Safety alert delivery failed: admin=%s error=%s", admin_id, type(exc).__name__)
 
+    async def _send_ops_safety(self, text: str) -> None:
+        if self.ops_chat is None:
+            return
+        try:
+            await self.ops_chat.notify_safety(text)
+        except Exception as exc:
+            logger.warning("Ops safety mirror failed: %s", type(exc).__name__)
+
     def _alert_text(self, code: str, recovered: bool = False) -> str:
         prefix = "✅ <b>NOVERA Safety: восстановлено</b>" if recovered else "🚨 <b>NOVERA Safety</b>"
         details = {
@@ -270,9 +281,13 @@ class SafetyMonitor:
         activated = sorted(alerts - previous)
         recovered = sorted(previous - alerts)
         for code in activated:
-            await self._send_admin(self._alert_text(code, recovered=False))
+            text = self._alert_text(code, recovered=False)
+            await self._send_admin(text)
+            await self._send_ops_safety(text)
         for code in recovered:
-            await self._send_admin(self._alert_text(code, recovered=True))
+            text = self._alert_text(code, recovered=True)
+            await self._send_admin(text)
+            await self._send_ops_safety(text)
         if alerts != previous:
             await self.repository.set_safety_state(self.ALERT_STATE_KEY, json.dumps(sorted(alerts)))
 

@@ -1,3 +1,4 @@
+import json
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,7 +8,78 @@ import pytest
 from delta_backend.api_settings import MiniAppSettings
 from delta_backend.repository import DeltaRepository
 from delta_backend.services.payouts import DailyPayoutService
-from delta_backend.services.safety import PayoutCircuitBreaker, SafetyRuntime
+from delta_backend.services.safety import PayoutCircuitBreaker, SafetyMonitor, SafetyRuntime
+
+
+class SafetyStateRepository:
+    def __init__(self, raw_state: str | None = None) -> None:
+        self.raw_state = raw_state
+        self.saved_state: str | None = None
+
+    async def get_safety_state(self, key: str) -> str | None:
+        assert key == SafetyMonitor.ALERT_STATE_KEY
+        return self.raw_state
+
+    async def set_safety_state(self, key: str, value: str) -> None:
+        assert key == SafetyMonitor.ALERT_STATE_KEY
+        self.saved_state = value
+
+
+class RecordingOpsChat:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    async def notify_safety(self, text: str) -> None:
+        self.messages.append(text)
+
+
+class FailingOpsChat:
+    async def notify_safety(self, text: str) -> None:
+        raise RuntimeError("ops unavailable")
+
+
+def safety_monitor_for_transitions(
+    repository: SafetyStateRepository,
+    ops_chat: object | None,
+) -> tuple[SafetyMonitor, list[str]]:
+    monitor = object.__new__(SafetyMonitor)
+    monitor.repository = repository
+    monitor.ops_chat = ops_chat
+    admin_messages: list[str] = []
+
+    async def send_admin(text: str) -> None:
+        admin_messages.append(text)
+
+    monitor._send_admin = send_admin
+    return monitor, admin_messages
+
+
+@pytest.mark.asyncio
+async def test_safety_transition_mirrors_admin_alerts_to_ops_chat() -> None:
+    repository = SafetyStateRepository(json.dumps(["LOW_BNB"]))
+    ops_chat = RecordingOpsChat()
+    monitor, admin_messages = safety_monitor_for_transitions(repository, ops_chat)
+
+    await monitor._publish_transitions({"LOW_USDT"})
+
+    assert ops_chat.messages == admin_messages
+    assert ops_chat.messages == [
+        monitor._alert_text("LOW_USDT", recovered=False),
+        monitor._alert_text("LOW_BNB", recovered=True),
+    ]
+    assert repository.saved_state == json.dumps(["LOW_USDT"])
+
+
+@pytest.mark.asyncio
+async def test_safety_transition_logs_ops_mirror_failures(caplog: pytest.LogCaptureFixture) -> None:
+    repository = SafetyStateRepository()
+    monitor, admin_messages = safety_monitor_for_transitions(repository, FailingOpsChat())
+
+    await monitor._publish_transitions({"LOW_BNB"})
+
+    assert admin_messages == [monitor._alert_text("LOW_BNB", recovered=False)]
+    assert repository.saved_state == json.dumps(["LOW_BNB"])
+    assert "Ops safety mirror failed: RuntimeError" in caplog.text
 
 
 @pytest.mark.asyncio

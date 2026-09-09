@@ -1101,6 +1101,7 @@ async def lifespan(application: FastAPI):
             bot_token,
             safety_runtime,
             payout_circuit,
+            ops_chat=ops_chat,
         )
         tasks.append(
             asyncio.create_task(
