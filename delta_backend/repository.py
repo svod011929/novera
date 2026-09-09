@@ -1476,12 +1476,67 @@ class DeltaRepository:
                 (now,),
             )
 
+            requested_promo_code: str | None = None
+            if promo_code is not None and str(promo_code).strip():
+                requested_promo_code = self._normalize_promo_code(promo_code)
+
+            # Idempotent replays must resolve before promo validation so a retry
+            # keeps returning its invoice even after the promo was disabled,
+            # capped or expired in the meantime.
+            if idempotency_key:
+                cursor = await connection.execute(
+                    """
+                    SELECT invoice.id, invoice.base_minor, invoice.exact_minor,
+                           invoice.expires_at, invoice.promo_code_id,
+                           promo.code AS promo_code, promo.bonus_type,
+                           promo.bonus_bps, promo.bonus_fixed_minor
+                    FROM deposit_invoices invoice
+                    LEFT JOIN promo_codes promo ON promo.id = invoice.promo_code_id
+                    WHERE invoice.user_id = ? AND invoice.idempotency_key = ?
+                    """,
+                    (user_id, idempotency_key),
+                )
+                existing = await cursor.fetchone()
+                if existing:
+                    if int(existing["base_minor"]) != base_minor:
+                        raise RepositoryError(
+                            "Idempotency key was already used for another amount"
+                        )
+                    existing_promo_id = existing["promo_code_id"]
+                    existing_promo_id = (
+                        int(existing_promo_id) if existing_promo_id is not None else None
+                    )
+                    existing_promo_code = existing["promo_code"]
+                    if (
+                        None if existing_promo_code is None else str(existing_promo_code)
+                    ) != requested_promo_code:
+                        raise RepositoryError(
+                            "Idempotency key was already used with a different promo code"
+                        )
+                    existing_bonus_minor = 0
+                    if existing_promo_id is not None:
+                        try:
+                            existing_bonus_minor = compute_promo_bonus_minor(
+                                dict(existing), base_minor
+                            )
+                        except RepositoryError:
+                            existing_bonus_minor = 0
+                    return {
+                        "invoice_id": int(existing["id"]),
+                        "exact_minor": int(existing["exact_minor"]),
+                        "expires_at": int(existing["expires_at"]),
+                        "reused": True,
+                        "promo_code_id": existing_promo_id,
+                        "bonus_minor": existing_bonus_minor,
+                        "effective_principal_preview_minor": base_minor
+                        + existing_bonus_minor,
+                    }
+
             promo_code_id: int | None = None
             bonus_minor = 0
-            if promo_code is not None and str(promo_code).strip():
-                normalized_promo = self._normalize_promo_code(promo_code)
+            if requested_promo_code is not None:
                 promo_cursor = await connection.execute(
-                    "SELECT * FROM promo_codes WHERE code = ?", (normalized_promo,)
+                    "SELECT * FROM promo_codes WHERE code = ?", (requested_promo_code,)
                 )
                 promo_row = await promo_cursor.fetchone()
                 if not promo_row or not promo_row["enabled"]:
@@ -1507,36 +1562,6 @@ class DeltaRepository:
                 if base_minor + bonus_minor > maximum:
                     raise RepositoryError("Promo would exceed deposit maximum")
                 promo_code_id = int(promo["id"])
-
-            if idempotency_key:
-                cursor = await connection.execute(
-                    "SELECT id, base_minor, exact_minor, expires_at, promo_code_id "
-                    "FROM deposit_invoices WHERE user_id = ? AND idempotency_key = ?",
-                    (user_id, idempotency_key),
-                )
-                existing = await cursor.fetchone()
-                if existing:
-                    if int(existing["base_minor"]) != base_minor:
-                        raise RepositoryError(
-                            "Idempotency key was already used for another amount"
-                        )
-                    existing_promo_id = existing["promo_code_id"]
-                    existing_promo_id = (
-                        int(existing_promo_id) if existing_promo_id is not None else None
-                    )
-                    if existing_promo_id != promo_code_id:
-                        raise RepositoryError(
-                            "Idempotency key was already used with a different promo code"
-                        )
-                    return {
-                        "invoice_id": int(existing["id"]),
-                        "exact_minor": int(existing["exact_minor"]),
-                        "expires_at": int(existing["expires_at"]),
-                        "reused": True,
-                        "promo_code_id": existing_promo_id,
-                        "bonus_minor": bonus_minor,
-                        "effective_principal_preview_minor": base_minor + bonus_minor,
-                    }
 
             cursor = await connection.execute(
                 "SELECT COUNT(*) AS value FROM deposit_invoices "
@@ -1587,6 +1612,59 @@ class DeltaRepository:
                 (int(time.time()),),
             )
             return int(cursor.rowcount)
+
+    async def _reserve_promo_redemption(
+        self,
+        connection: aiosqlite.Connection,
+        *,
+        promo_code_id: int,
+        user_id: int,
+        base_minor: int,
+        now: int,
+    ) -> tuple[int, str | None]:
+        """Claim a redemption slot for an invoice promo without raising.
+
+        Returns ``(bonus_minor, skip_reason)``. A non-null skip reason means the
+        promo must be dropped from the deposit; nothing was reserved. Callers
+        must still credit the transfer, because a confirmed on-chain payment can
+        never be rejected over promo bookkeeping.
+        """
+        cursor = await connection.execute(
+            "SELECT * FROM promo_codes WHERE id = ?", (promo_code_id,)
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return 0, "promo_missing"
+        promo = dict(row)
+        if not promo["enabled"]:
+            return 0, "promo_disabled"
+        if promo["valid_from"] is not None and now < int(promo["valid_from"]):
+            return 0, "promo_not_active"
+        if promo["valid_until"] is not None and now > int(promo["valid_until"]):
+            return 0, "promo_expired"
+        try:
+            bonus_minor = compute_promo_bonus_minor(promo, base_minor)
+        except RepositoryError:
+            return 0, "promo_bonus_invalid"
+        if bonus_minor <= 0:
+            return 0, "promo_bonus_invalid"
+        cursor = await connection.execute(
+            "SELECT 1 FROM promo_redemptions WHERE promo_code_id = ? AND user_id = ?",
+            (promo_code_id, user_id),
+        )
+        if await cursor.fetchone():
+            return 0, "promo_already_redeemed"
+        cursor = await connection.execute(
+            """
+            UPDATE promo_codes
+            SET redemption_count = redemption_count + 1
+            WHERE id = ? AND redemption_count < max_redemptions
+            """,
+            (promo_code_id,),
+        )
+        if not cursor.rowcount:
+            return 0, "promo_cap_reached"
+        return bonus_minor, None
 
     async def apply_transfer(self, transfer: TransferEvent) -> dict[str, object]:
         now = int(time.time())
@@ -1653,22 +1731,20 @@ class DeltaRepository:
 
             bonus_minor = 0
             promo_code_id = invoice["promo_code_id"]
+            promo_code_id = int(promo_code_id) if promo_code_id is not None else None
+            skipped_promo_code_id = promo_code_id
+            promo_skip_reason: str | None = None
             if promo_code_id is not None:
-                promo_code_id = int(promo_code_id)
-                promo_cursor = await connection.execute(
-                    "SELECT * FROM promo_codes WHERE id = ?", (promo_code_id,)
+                bonus_minor, promo_skip_reason = await self._reserve_promo_redemption(
+                    connection,
+                    promo_code_id=promo_code_id,
+                    user_id=int(invoice["user_id"]),
+                    base_minor=int(invoice["base_minor"]),
+                    now=now,
                 )
-                promo_row = await promo_cursor.fetchone()
-                if not promo_row or not promo_row["enabled"]:
-                    raise RepositoryError("Promo code is no longer available")
-                promo = dict(promo_row)
-                if promo["valid_from"] is not None and now < int(promo["valid_from"]):
-                    raise RepositoryError("Promo code is not yet active")
-                if promo["valid_until"] is not None and now > int(promo["valid_until"]):
-                    raise RepositoryError("Promo code has expired")
-                bonus_minor = compute_promo_bonus_minor(promo, int(invoice["base_minor"]))
-                if bonus_minor <= 0:
-                    raise RepositoryError("Promo code does not grant a bonus")
+                if promo_skip_reason is not None:
+                    bonus_minor = 0
+                    promo_code_id = None
 
             principal_minor = int(transfer.amount_minor) + bonus_minor
 
@@ -1710,20 +1786,34 @@ class DeltaRepository:
                             now,
                         ),
                     )
-                except aiosqlite.IntegrityError as exc:
-                    raise RepositoryError(
-                        "Promo code already redeemed by this user"
-                    ) from exc
-                redeem_cursor = await connection.execute(
-                    """
-                    UPDATE promo_codes
-                    SET redemption_count = redemption_count + 1
-                    WHERE id = ? AND redemption_count < max_redemptions
-                    """,
-                    (promo_code_id,),
+                except aiosqlite.IntegrityError:
+                    # Give the reserved slot back and strip the bonus instead of
+                    # rolling back the credited transfer.
+                    await connection.execute(
+                        "UPDATE promo_codes SET redemption_count = redemption_count - 1 "
+                        "WHERE id = ? AND redemption_count > 0",
+                        (promo_code_id,),
+                    )
+                    await connection.execute(
+                        "UPDATE deposits SET principal_minor = ?, bonus_minor = 0, "
+                        "promo_code_id = NULL WHERE id = ?",
+                        (int(transfer.amount_minor), deposit_id),
+                    )
+                    principal_minor = int(transfer.amount_minor)
+                    bonus_minor = 0
+                    promo_code_id = None
+                    promo_skip_reason = "promo_redemption_conflict"
+
+            if promo_skip_reason is not None:
+                await connection.execute(
+                    "INSERT INTO audit_events(event_type, details, created_at) "
+                    "VALUES ('promo_redeem_skipped', ?, ?)",
+                    (
+                        f"deposit={deposit_id};invoice={int(invoice['id'])};"
+                        f"promo={skipped_promo_code_id};reason={promo_skip_reason}",
+                        now,
+                    ),
                 )
-                if not redeem_cursor.rowcount:
-                    raise RepositoryError("Promo code redemption limit reached")
 
             await connection.execute(
                 "INSERT INTO audit_events(event_type, details, created_at) "
@@ -1759,6 +1849,10 @@ class DeltaRepository:
                 "user_id": int(invoice["user_id"]),
                 "deposit_id": deposit_id,
                 "amount_minor": transfer.amount_minor,
+                "principal_minor": principal_minor,
+                "bonus_minor": bonus_minor,
+                "promo_code_id": promo_code_id,
+                "promo_skipped_reason": promo_skip_reason,
             }
 
     async def get_sync_height(self, key: str) -> int | None:

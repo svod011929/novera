@@ -11,10 +11,8 @@ WALLET_ONE = "0x0000000000000000000000000000000000000001"
 WALLET_TWO = "0x0000000000000000000000000000000000000002"
 
 
-async def _pay(repo, user_id, amount, log_index, promo_code=None):
-    inv = await repo.create_invoice(user_id, usdt_to_minor(amount), promo_code=promo_code)
-    exact = int(inv["exact_minor"])
-    result = await repo.apply_transfer(
+async def _pay_exact(repo, exact, log_index):
+    return await repo.apply_transfer(
         TransferEvent(
             chain_id=97,
             tx_hash=f"0x{log_index:064x}",
@@ -26,8 +24,36 @@ async def _pay(repo, user_id, amount, log_index, promo_code=None):
             amount_minor=exact,
         )
     )
+
+
+async def _pay(repo, user_id, amount, log_index, promo_code=None):
+    inv = await repo.create_invoice(user_id, usdt_to_minor(amount), promo_code=promo_code)
+    result = await _pay_exact(repo, int(inv["exact_minor"]), log_index)
     assert result["matched"] is True
     return int(result["deposit_id"]), inv
+
+
+async def _fetch_one(repo, sql, params=()):
+    connection = repo._connection()
+    async with repo._lock:
+        cursor = await connection.execute(sql, params)
+        row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def _make_percent_promo(repo, code, owner, *, bonus_bps=1000, max_redemptions=50):
+    return await repo.admin_create_promo_code(
+        code=code,
+        bonus_type="percent",
+        bonus_bps=bonus_bps,
+        bonus_fixed_minor=0,
+        max_redemptions=max_redemptions,
+        min_deposit_minor=0,
+        valid_from=None,
+        valid_until=None,
+        enabled=True,
+        created_by=owner,
+    )
 
 
 async def test_admin_create_and_list_promo_codes(tmp_path) -> None:
@@ -274,5 +300,137 @@ async def test_expired_invoice_does_not_consume_promo(tmp_path) -> None:
         # promo still available for new invoice
         inv2 = await repo.create_invoice(20, usdt_to_minor("100"), promo_code="ONCE")
         assert inv2["invoice_id"] != inv["invoice_id"]
+    finally:
+        await repo.close()
+
+
+async def test_disabled_promo_still_opens_deposit_without_bonus(tmp_path) -> None:
+    repo = DeltaRepository(tmp_path / "d.sqlite3", MiniAppSettings(_env_file=None))
+    await repo.connect()
+    try:
+        await repo.ensure_user(30, "u", "U", "ru")
+        await repo.set_wallet(30, WALLET_ONE)
+        promo = await _make_percent_promo(repo, "OFFLATER", 30)
+
+        inv = await repo.create_invoice(30, usdt_to_minor("100"), promo_code="OFFLATER")
+        exact = int(inv["exact_minor"])
+        await repo.admin_update_promo_code(int(promo["id"]), enabled=False)
+
+        result = await _pay_exact(repo, exact, 5)
+        assert result["matched"] is True
+        assert int(result["bonus_minor"]) == 0
+        assert result["promo_code_id"] is None
+        assert result["promo_skipped_reason"] == "promo_disabled"
+
+        deposit = await _fetch_one(
+            repo,
+            "SELECT principal_minor, bonus_minor, promo_code_id FROM deposits WHERE id = ?",
+            (int(result["deposit_id"]),),
+        )
+        assert int(deposit["principal_minor"]) == exact
+        assert int(deposit["bonus_minor"]) == 0
+        assert deposit["promo_code_id"] is None
+
+        # the on-chain payment must survive: chain_deposits row matched, invoice paid
+        chain = await _fetch_one(
+            repo,
+            "SELECT invoice_id, matched FROM chain_deposits WHERE amount_minor = ?",
+            (exact,),
+        )
+        assert chain is not None
+        assert int(chain["invoice_id"]) == int(inv["invoice_id"])
+        assert int(chain["matched"]) == 1
+        invoice_row = await _fetch_one(
+            repo,
+            "SELECT status FROM deposit_invoices WHERE id = ?",
+            (int(inv["invoice_id"]),),
+        )
+        assert invoice_row["status"] == "paid"
+
+        audit = await _fetch_one(
+            repo,
+            "SELECT details FROM audit_events WHERE event_type = 'promo_redeem_skipped'",
+        )
+        assert audit is not None
+        assert "reason=promo_disabled" in audit["details"]
+        assert f"promo={int(promo['id'])}" in audit["details"]
+
+        assert int((await repo.get_promo_by_code("OFFLATER"))["redemption_count"]) == 0
+        assert (
+            await _fetch_one(repo, "SELECT 1 AS v FROM promo_redemptions LIMIT 1")
+        ) is None
+    finally:
+        await repo.close()
+
+
+async def test_second_pending_invoice_opens_without_bonus(tmp_path) -> None:
+    repo = DeltaRepository(tmp_path / "d.sqlite3", MiniAppSettings(_env_file=None))
+    await repo.connect()
+    try:
+        await repo.ensure_user(40, "u", "U", "ru")
+        await repo.set_wallet(40, WALLET_ONE)
+        promo = await _make_percent_promo(repo, "TWICE", 40)
+
+        first_invoice = await repo.create_invoice(40, usdt_to_minor("100"), promo_code="TWICE")
+        second_invoice = await repo.create_invoice(40, usdt_to_minor("100"), promo_code="TWICE")
+        bonus = usdt_to_minor("10")
+
+        first = await _pay_exact(repo, int(first_invoice["exact_minor"]), 11)
+        assert first["matched"] is True
+        assert int(first["bonus_minor"]) == bonus
+        assert first["promo_skipped_reason"] is None
+        assert int(first["promo_code_id"]) == int(promo["id"])
+
+        second = await _pay_exact(repo, int(second_invoice["exact_minor"]), 12)
+        assert second["matched"] is True
+        assert int(second["bonus_minor"]) == 0
+        assert second["promo_code_id"] is None
+        assert second["promo_skipped_reason"] == "promo_already_redeemed"
+
+        second_deposit = await _fetch_one(
+            repo,
+            "SELECT principal_minor, bonus_minor FROM deposits WHERE id = ?",
+            (int(second["deposit_id"]),),
+        )
+        assert int(second_deposit["principal_minor"]) == int(second_invoice["exact_minor"])
+        assert int(second_deposit["bonus_minor"]) == 0
+
+        assert int((await repo.get_promo_by_code("TWICE"))["redemption_count"]) == 1
+        redemptions = await _fetch_one(
+            repo, "SELECT COUNT(*) AS value FROM promo_redemptions"
+        )
+        assert int(redemptions["value"]) == 1
+    finally:
+        await repo.close()
+
+
+async def test_idempotent_invoice_reuse_survives_promo_disable(tmp_path) -> None:
+    repo = DeltaRepository(tmp_path / "d.sqlite3", MiniAppSettings(_env_file=None))
+    await repo.connect()
+    try:
+        await repo.ensure_user(50, "u", "U", "ru")
+        await repo.set_wallet(50, WALLET_ONE)
+        promo = await _make_percent_promo(repo, "REUSE", 50)
+
+        inv = await repo.create_invoice(
+            50, usdt_to_minor("100"), idempotency_key="key-1", promo_code="REUSE"
+        )
+        await repo.admin_update_promo_code(int(promo["id"]), enabled=False)
+
+        again = await repo.create_invoice(
+            50, usdt_to_minor("100"), idempotency_key="key-1", promo_code="REUSE"
+        )
+        assert again["reused"] is True
+        assert int(again["invoice_id"]) == int(inv["invoice_id"])
+        assert int(again["exact_minor"]) == int(inv["exact_minor"])
+        assert int(again["promo_code_id"]) == int(promo["id"])
+        assert int(again["bonus_minor"]) == usdt_to_minor("10")
+
+        # a fresh invoice for the disabled promo is still rejected
+        with pytest.raises(RepositoryError):
+            await repo.create_invoice(50, usdt_to_minor("100"), promo_code="REUSE")
+        # reuse with a mismatched promo binding is still rejected
+        with pytest.raises(RepositoryError):
+            await repo.create_invoice(50, usdt_to_minor("100"), idempotency_key="key-1")
     finally:
         await repo.close()
