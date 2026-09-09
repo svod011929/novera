@@ -30,7 +30,14 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 from eth_account import Account
 from web3 import Web3
 
-from .amounts import MINOR_FACTOR, minor_to_atomic, minor_to_text, usdt_to_minor
+from .amounts import (
+    MINOR_FACTOR,
+    bps_to_percent_text,
+    minor_to_atomic,
+    minor_to_text,
+    percent_to_bps,
+    usdt_to_minor,
+)
 from .api_settings import MiniAppSettings
 from .config import Settings
 from .launcher import run_launcher
@@ -148,6 +155,7 @@ class WalletRequest(BaseModel):
 
 class InvoiceRequest(BaseModel):
     amount: Decimal = Field(gt=0)
+    promo_code: str | None = Field(default=None, max_length=32)
 
 
 class SessionExchangeRequest(BaseModel):
@@ -249,6 +257,30 @@ class AdminTestPayoutRequest(BaseModel):
     address: str = Field(min_length=42, max_length=42)
     amount: Decimal = Field(ge=Decimal("1"), le=Decimal("1000000000000"))
     confirm: Literal["REAL_PAYOUT"]
+
+
+class PromoCodeCreateRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    bonus_type: Literal["percent", "fixed"]
+    bonus_percent: Decimal | None = Field(default=None, ge=0, le=Decimal("100"))
+    bonus_usdt: Decimal | None = Field(default=None, ge=0, le=Decimal("1000000000000"))
+    max_redemptions: int = Field(ge=1, le=1_000_000)
+    min_deposit_usdt: Decimal = Field(default=Decimal("0"), ge=0)
+    valid_from: int | None = Field(default=None, ge=0)
+    valid_until: int | None = Field(default=None, ge=0)
+    enabled: bool = True
+
+
+class PromoCodeUpdateRequest(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=32)
+    bonus_type: Literal["percent", "fixed"] | None = None
+    bonus_percent: Decimal | None = Field(default=None, ge=0, le=Decimal("100"))
+    bonus_usdt: Decimal | None = Field(default=None, ge=0, le=Decimal("1000000000000"))
+    max_redemptions: int | None = Field(default=None, ge=1, le=1_000_000)
+    min_deposit_usdt: Decimal | None = Field(default=None, ge=0)
+    valid_from: int | None = Field(default=None, ge=0)
+    valid_until: int | None = Field(default=None, ge=0)
+    enabled: bool | None = None
 
 
 class BroadcastButtonRequest(BaseModel):
@@ -449,6 +481,42 @@ def validate_broadcast_buttons(buttons: list[BroadcastButtonRequest]) -> list[di
             raise HTTPException(status_code=422, detail="Button URL must use https://, http:// or tg://")
         result.append({"text": text, "url": url})
     return result
+
+
+def _usdt_to_minor_allow_zero(value: Decimal) -> int:
+    if value == 0:
+        return 0
+    return usdt_to_minor(value)
+
+
+def _promo_bonus_minor_fields(
+    bonus_type: str,
+    bonus_percent: Decimal | None,
+    bonus_usdt: Decimal | None,
+) -> tuple[int, int]:
+    """Translate percent/usdt request fields into bps/minor storage units."""
+    if bonus_type == "percent":
+        if bonus_percent is None or bonus_percent <= 0:
+            raise HTTPException(
+                status_code=422, detail="bonus_percent is required for percent promo"
+            )
+        return percent_to_bps(bonus_percent), 0
+    if bonus_usdt is None or bonus_usdt <= 0:
+        raise HTTPException(
+            status_code=422, detail="bonus_usdt is required for fixed promo"
+        )
+    return 0, usdt_to_minor(bonus_usdt)
+
+
+def _promo_response(promo: dict[str, object]) -> dict[str, object]:
+    bonus_bps = int(promo.get("bonus_bps") or 0)
+    bonus_fixed_minor = int(promo.get("bonus_fixed_minor") or 0)
+    return {
+        **promo,
+        "bonus_percent": bps_to_percent_text(bonus_bps) if bonus_bps else None,
+        "bonus_usdt": minor_to_text(bonus_fixed_minor) if bonus_fixed_minor else None,
+        "min_deposit_usdt": minor_to_text(int(promo.get("min_deposit_minor") or 0)),
+    }
 
 
 def runtime_settings_snapshot(business: MiniAppSettings, chain_settings: Settings) -> dict[str, object]:
@@ -1751,14 +1819,21 @@ async def create_invoice(
         )
     if not chain_settings.treasury_address:
         raise HTTPException(status_code=503, detail="Treasury wallet is not configured")
+    promo_code = payload.promo_code.strip() if payload.promo_code else None
     try:
         invoice = await repository.create_invoice(
             user.telegram_id,
             usdt_to_minor(payload.amount),
             idempotency_key,
+            promo_code=promo_code or None,
         )
     except RepositoryError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    bonus_minor = int(invoice.get("bonus_minor") or 0)
+    effective_principal_minor = int(
+        invoice.get("effective_principal_preview_minor")
+        or (int(invoice["exact_minor"]) + bonus_minor)
+    )
     return {
         "invoice_id": invoice["invoice_id"],
         "exact_amount": minor_to_text(int(invoice["exact_minor"]), trim=False),
@@ -1767,6 +1842,10 @@ async def create_invoice(
         "treasury_address": chain_settings.treasury_address,
         "token_symbol": chain_settings.token_symbol,
         "chain_id": chain_settings.chain_id,
+        "promo_code_id": invoice.get("promo_code_id"),
+        "bonus_minor": bonus_minor,
+        "bonus_usdt": minor_to_text(bonus_minor, trim=False),
+        "effective_principal_usdt": minor_to_text(effective_principal_minor, trim=False),
     }
 
 
@@ -2127,6 +2206,89 @@ async def retry_payout(
     require_financial_activation(request, capability="payouts")
     repository: DeltaRepository = request.app.state.repository
     return {"retried": await repository.retry_payout(payout_id)}
+
+
+@app.get("/api/admin/promo-codes")
+async def admin_list_promo_codes(
+    request: Request,
+    _user: AuthenticatedUser = Depends(admin_user),
+) -> list[dict[str, object]]:
+    repository: DeltaRepository = request.app.state.repository
+    rows = await repository.admin_list_promo_codes()
+    return [_promo_response(row) for row in rows]
+
+
+@app.post("/api/admin/promo-codes")
+async def admin_create_promo_code(
+    payload: PromoCodeCreateRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "promo-code")
+    bonus_bps, bonus_fixed_minor = _promo_bonus_minor_fields(
+        payload.bonus_type, payload.bonus_percent, payload.bonus_usdt
+    )
+    repository: DeltaRepository = request.app.state.repository
+    try:
+        created = await repository.admin_create_promo_code(
+            code=payload.code,
+            bonus_type=payload.bonus_type,
+            bonus_bps=bonus_bps,
+            bonus_fixed_minor=bonus_fixed_minor,
+            max_redemptions=payload.max_redemptions,
+            min_deposit_minor=_usdt_to_minor_allow_zero(payload.min_deposit_usdt),
+            valid_from=payload.valid_from,
+            valid_until=payload.valid_until,
+            enabled=payload.enabled,
+            created_by=user.telegram_id,
+        )
+    except RepositoryError as exc:
+        detail = str(exc)
+        code = 409 if "already exists" in detail else 422
+        raise HTTPException(status_code=code, detail=detail) from exc
+    return _promo_response(created)
+
+
+@app.patch("/api/admin/promo-codes/{promo_id}")
+async def admin_update_promo_code(
+    promo_id: int,
+    payload: PromoCodeUpdateRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(admin_user),
+) -> dict[str, object]:
+    await enforce_mutation_limit(request, user, "promo-code-update")
+    repository: DeltaRepository = request.app.state.repository
+    fields = payload.model_dump(exclude_unset=True)
+    bonus_percent = fields.pop("bonus_percent", None)
+    bonus_usdt = fields.pop("bonus_usdt", None)
+    if "bonus_type" in fields or bonus_percent is not None or bonus_usdt is not None:
+        current = await repository.admin_list_promo_codes()
+        existing = next((row for row in current if int(row["id"]) == promo_id), None)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Promo code not found")
+        bonus_type = fields.get("bonus_type", existing["bonus_type"])
+        bonus_bps, bonus_fixed_minor = _promo_bonus_minor_fields(
+            bonus_type, bonus_percent, bonus_usdt
+        )
+        fields["bonus_type"] = bonus_type
+        fields["bonus_bps"] = bonus_bps
+        fields["bonus_fixed_minor"] = bonus_fixed_minor
+    if "min_deposit_usdt" in fields:
+        fields["min_deposit_minor"] = _usdt_to_minor_allow_zero(
+            fields.pop("min_deposit_usdt")
+        )
+    try:
+        updated = await repository.admin_update_promo_code(promo_id, **fields)
+    except RepositoryError as exc:
+        detail = str(exc)
+        if detail == "Promo code not found":
+            code = 404
+        elif "already exists" in detail:
+            code = 409
+        else:
+            code = 422
+        raise HTTPException(status_code=code, detail=detail) from exc
+    return _promo_response(updated)
 
 
 @app.get("/api/admin/broadcasts")
