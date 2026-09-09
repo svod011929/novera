@@ -1752,11 +1752,16 @@ class DeltaRepository:
             await self._assert_promo_code_exists(connection, prepared["promo_code_id"])
 
             enabled = bool(fields["enabled"]) if "enabled" in fields else bool(current["enabled"])
+            was_enabled = bool(current["enabled"])
             schedule_keys = ("schedule_mode", "interval_hours", "weekdays", "time_utc")
             if fields.get("next_run_at") is not None:
                 next_run_at = int(fields["next_run_at"])
             elif any(key in fields for key in schedule_keys):
                 # A rescheduled campaign must not keep the slot derived from the old schedule.
+                next_run_at = compute_next_run_at(prepared, now)
+            elif enabled and not was_enabled and int(current["next_run_at"]) <= now:
+                # Re-enabling a campaign whose slot already passed must not let it
+                # fire immediately off-schedule; recompute a future slot instead.
                 next_run_at = compute_next_run_at(prepared, now)
             else:
                 next_run_at = int(current["next_run_at"])
@@ -2300,28 +2305,72 @@ class DeltaRepository:
                 (f"deposit={deposit_id};tx={transfer.tx_hash}", now),
             )
             amount_text = minor_to_text(int(transfer.amount_minor))
+            principal_text = minor_to_text(principal_minor)
+            if bonus_minor > 0:
+                bonus_text = minor_to_text(bonus_minor)
+                body = (
+                    f"Зачислено {amount_text} USDT + бонус {bonus_text} USDT = "
+                    f"{principal_text} USDT. Депозит #{deposit_id} активирован."
+                )
+                telegram_html = (
+                    "✅ <b>Пополнение подтверждено</b>\n\n"
+                    f"💰 Зачислено: <b>{amount_text} USDT</b>\n"
+                    f"🎁 Бонус: <b>+{bonus_text} USDT</b>\n"
+                    f"📦 Депозит: <b>#{deposit_id}</b> на сумму <b>{principal_text} USDT</b>\n"
+                    "⏱ Первая выплата — через 24 часа."
+                )
+            else:
+                body = f"Зачислено {principal_text} USDT. Депозит #{deposit_id} активирован."
+                telegram_html = (
+                    "✅ <b>Пополнение подтверждено</b>\n\n"
+                    f"💰 Зачислено: <b>{principal_text} USDT</b>\n"
+                    f"📦 Депозит: <b>#{deposit_id}</b>\n"
+                    "⏱ Первая выплата — через 24 часа."
+                )
             await self._queue_notification(
                 connection,
                 user_id=int(invoice["user_id"]),
                 category="deposit",
                 event_type="deposit_confirmed",
                 title="Пополнение подтверждено",
-                body=f"Зачислено {amount_text} USDT. Депозит #{deposit_id} активирован.",
-                telegram_html=(
-                    "✅ <b>Пополнение подтверждено</b>\n\n"
-                    f"💰 Зачислено: <b>{amount_text} USDT</b>\n"
-                    f"📦 Депозит: <b>#{deposit_id}</b>\n"
-                    "⏱ Первая выплата — через 24 часа."
-                ),
+                body=body,
+                telegram_html=telegram_html,
                 dedupe_key=f"deposit-confirmed:{deposit_id}",
                 data={
                     "target_view": "assets",
                     "deposit_id": deposit_id,
                     "amount_minor": int(transfer.amount_minor),
+                    "bonus_minor": bonus_minor,
+                    "principal_minor": principal_minor,
                     "tx_hash": str(transfer.tx_hash),
                 },
                 created_at=now,
             )
+            if promo_skip_reason is not None:
+                await self._queue_notification(
+                    connection,
+                    user_id=int(invoice["user_id"]),
+                    category="deposit",
+                    event_type="promo_skipped",
+                    title="Промокод не применён",
+                    body=(
+                        "Промокод к этому пополнению не применён — бонус, показанный "
+                        "в счёте, не зачислен. Депозит открыт на фактическую сумму "
+                        "перевода."
+                    ),
+                    telegram_html=(
+                        "⚠️ <b>Промокод не применён</b>\n\n"
+                        "Бонус, показанный в счёте, не зачислен — депозит открыт "
+                        "на фактическую сумму перевода."
+                    ),
+                    dedupe_key=f"deposit-promo-skipped:{deposit_id}",
+                    data={
+                        "target_view": "assets",
+                        "deposit_id": deposit_id,
+                        "promo_skip_reason": promo_skip_reason,
+                    },
+                    created_at=now,
+                )
             return {
                 "duplicate": False,
                 "matched": True,

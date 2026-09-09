@@ -340,6 +340,58 @@ async def test_claim_due_campaigns_filters_disabled_and_future(tmp_path) -> None
         await repo.close()
 
 
+async def test_reenable_campaign_with_past_slot_reschedules(tmp_path) -> None:
+    repo = await _repo(tmp_path)
+    try:
+        await repo.ensure_user(1, "admin", "Admin", "ru")
+        now = int(time.time())
+
+        weekly = await repo.admin_create_campaign(
+            kind="custom",
+            audience="all",
+            schedule_mode="weekly",
+            weekdays=[3],
+            time_utc="09:30",
+            message_html="weekly",
+            created_by=1,
+            enabled=False,
+            next_run_at=now - 3600,
+        )
+        updated_weekly = await repo.admin_update_campaign(int(weekly["id"]), enabled=True)
+        assert int(updated_weekly["next_run_at"]) > now
+        assert bool(updated_weekly["enabled"]) is True
+
+        interval = await repo.admin_create_campaign(
+            kind="custom",
+            audience="all",
+            schedule_mode="interval",
+            interval_hours=6,
+            message_html="interval",
+            created_by=1,
+            enabled=False,
+            next_run_at=now - 3600,
+        )
+        updated_interval = await repo.admin_update_campaign(int(interval["id"]), enabled=True)
+        assert int(updated_interval["next_run_at"]) > now
+        assert bool(updated_interval["enabled"]) is True
+
+        # A campaign whose slot is still in the future must not be touched.
+        future = await repo.admin_create_campaign(
+            kind="custom",
+            audience="all",
+            schedule_mode="interval",
+            interval_hours=6,
+            message_html="future",
+            created_by=1,
+            enabled=False,
+            next_run_at=now + 3600,
+        )
+        updated_future = await repo.admin_update_campaign(int(future["id"]), enabled=True)
+        assert int(updated_future["next_run_at"]) == now + 3600
+    finally:
+        await repo.close()
+
+
 async def test_campaign_service_tick_counts_only_sent(tmp_path) -> None:
     repo = await _repo(tmp_path)
     try:

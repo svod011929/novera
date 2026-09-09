@@ -1524,6 +1524,7 @@
       state.activeInvoice=invoice;
       try{sessionStorage.setItem('novera_active_invoice', JSON.stringify(invoice));}catch(_){}
       renderInvoice(invoice);
+      if($('depositPromoCode')) $('depositPromoCode').value='';
       const bonusUsdt=Number(invoice.bonus_usdt||0);
       if(promoCode && bonusUsdt>0){
         toast(tr('promoApplied').replace('{bonus}',bonusUsdt.toFixed(2)).replace('{total}',Number(invoice.effective_principal_usdt||amount).toFixed(2)),'success');

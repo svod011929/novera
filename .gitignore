@@ -27,6 +27,8 @@ _owner_inputs/DESIGN_REFERENCES/*
 !_owner_inputs/DESIGN_REFERENCES/PUT_SCREENSHOTS_HERE.md
 _owner_inputs/BRAND_ASSETS/*
 !_owner_inputs/BRAND_ASSETS/PUT_BRAND_FILES_HERE.md
+_owner_inputs/*.png
+_owner_inputs/*.jpg
 
 # Local scratch space for superpowers-driven planning/reports; never commit.
 .superpowers/

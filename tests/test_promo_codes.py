@@ -363,6 +363,76 @@ async def test_disabled_promo_still_opens_deposit_without_bonus(tmp_path) -> Non
         await repo.close()
 
 
+async def test_deposit_confirmed_notification_mentions_bonus_and_total(tmp_path) -> None:
+    repo = DeltaRepository(tmp_path / "d.sqlite3", MiniAppSettings(_env_file=None))
+    await repo.connect()
+    try:
+        await repo.ensure_user(60, "u", "U", "ru")
+        await repo.set_wallet(60, WALLET_ONE)
+        await _make_percent_promo(repo, "NOTIFY10", 60, bonus_bps=1000)
+
+        deposit_id, inv = await _pay(repo, 60, "100", 7, promo_code="NOTIFY10")
+        cash = int(inv["exact_minor"])
+        bonus = usdt_to_minor("10")
+
+        notif = await _fetch_one(
+            repo,
+            "SELECT body, telegram_html FROM user_notifications "
+            "WHERE dedupe_key = ?",
+            (f"deposit-confirmed:{deposit_id}",),
+        )
+        assert notif is not None
+        # Body must report the boosted principal, not only the raw transfer amount.
+        assert "110" in notif["body"]
+        assert "10" in notif["body"]
+        assert "110" in notif["telegram_html"]
+
+        # No promo-skipped note should be queued when the promo actually applied.
+        skip_notif = await _fetch_one(
+            repo,
+            "SELECT 1 AS v FROM user_notifications WHERE dedupe_key = ?",
+            (f"deposit-promo-skipped:{deposit_id}",),
+        )
+        assert skip_notif is None
+    finally:
+        await repo.close()
+
+
+async def test_deposit_confirmed_notification_warns_when_promo_skipped(tmp_path) -> None:
+    repo = DeltaRepository(tmp_path / "d.sqlite3", MiniAppSettings(_env_file=None))
+    await repo.connect()
+    try:
+        await repo.ensure_user(70, "u", "U", "ru")
+        await repo.set_wallet(70, WALLET_ONE)
+        promo = await _make_percent_promo(repo, "SKIPNOTE", 70)
+
+        inv = await repo.create_invoice(70, usdt_to_minor("100"), promo_code="SKIPNOTE")
+        exact = int(inv["exact_minor"])
+        await repo.admin_update_promo_code(int(promo["id"]), enabled=False)
+
+        result = await _pay_exact(repo, exact, 8)
+        assert result["matched"] is True
+        deposit_id = int(result["deposit_id"])
+
+        confirm_notif = await _fetch_one(
+            repo,
+            "SELECT body FROM user_notifications WHERE dedupe_key = ?",
+            (f"deposit-confirmed:{deposit_id}",),
+        )
+        assert confirm_notif is not None
+        assert "100" in confirm_notif["body"]
+
+        skip_notif = await _fetch_one(
+            repo,
+            "SELECT body, telegram_html FROM user_notifications WHERE dedupe_key = ?",
+            (f"deposit-promo-skipped:{deposit_id}",),
+        )
+        assert skip_notif is not None
+        assert "не применён" in skip_notif["body"]
+    finally:
+        await repo.close()
+
+
 async def test_second_pending_invoice_opens_without_bonus(tmp_path) -> None:
     repo = DeltaRepository(tmp_path / "d.sqlite3", MiniAppSettings(_env_file=None))
     await repo.connect()
