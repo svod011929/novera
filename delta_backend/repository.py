@@ -1450,7 +1450,8 @@ class DeltaRepository:
         user_id: int,
         base_minor: int,
         idempotency_key: str | None = None,
-    ) -> dict[str, int | bool]:
+        promo_code: str | None = None,
+    ) -> dict[str, int | bool | None]:
         minimum = self.business.deposit_min_usdt * MINOR_FACTOR
         maximum = self.business.deposit_max_usdt * MINOR_FACTOR
         if not minimum <= base_minor <= maximum:
@@ -1474,9 +1475,42 @@ class DeltaRepository:
                 "WHERE status = 'pending' AND expires_at < ?",
                 (now,),
             )
+
+            promo_code_id: int | None = None
+            bonus_minor = 0
+            if promo_code is not None and str(promo_code).strip():
+                normalized_promo = self._normalize_promo_code(promo_code)
+                promo_cursor = await connection.execute(
+                    "SELECT * FROM promo_codes WHERE code = ?", (normalized_promo,)
+                )
+                promo_row = await promo_cursor.fetchone()
+                if not promo_row or not promo_row["enabled"]:
+                    raise RepositoryError("Promo code is not available")
+                promo = dict(promo_row)
+                if promo["valid_from"] is not None and now < int(promo["valid_from"]):
+                    raise RepositoryError("Promo code is not yet active")
+                if promo["valid_until"] is not None and now > int(promo["valid_until"]):
+                    raise RepositoryError("Promo code has expired")
+                if int(promo["redemption_count"]) >= int(promo["max_redemptions"]):
+                    raise RepositoryError("Promo code redemption limit reached")
+                if base_minor < int(promo["min_deposit_minor"]):
+                    raise RepositoryError("Deposit amount is below promo minimum")
+                redeemed_cursor = await connection.execute(
+                    "SELECT 1 FROM promo_redemptions WHERE promo_code_id = ? AND user_id = ?",
+                    (int(promo["id"]), user_id),
+                )
+                if await redeemed_cursor.fetchone():
+                    raise RepositoryError("Promo code already redeemed by this user")
+                bonus_minor = compute_promo_bonus_minor(promo, base_minor)
+                if bonus_minor <= 0:
+                    raise RepositoryError("Promo code does not grant a bonus")
+                if base_minor + bonus_minor > maximum:
+                    raise RepositoryError("Promo would exceed deposit maximum")
+                promo_code_id = int(promo["id"])
+
             if idempotency_key:
                 cursor = await connection.execute(
-                    "SELECT id, base_minor, exact_minor, expires_at "
+                    "SELECT id, base_minor, exact_minor, expires_at, promo_code_id "
                     "FROM deposit_invoices WHERE user_id = ? AND idempotency_key = ?",
                     (user_id, idempotency_key),
                 )
@@ -1486,11 +1520,22 @@ class DeltaRepository:
                         raise RepositoryError(
                             "Idempotency key was already used for another amount"
                         )
+                    existing_promo_id = existing["promo_code_id"]
+                    existing_promo_id = (
+                        int(existing_promo_id) if existing_promo_id is not None else None
+                    )
+                    if existing_promo_id != promo_code_id:
+                        raise RepositoryError(
+                            "Idempotency key was already used with a different promo code"
+                        )
                     return {
                         "invoice_id": int(existing["id"]),
                         "exact_minor": int(existing["exact_minor"]),
                         "expires_at": int(existing["expires_at"]),
                         "reused": True,
+                        "promo_code_id": existing_promo_id,
+                        "bonus_minor": bonus_minor,
+                        "effective_principal_preview_minor": base_minor + bonus_minor,
                     }
 
             cursor = await connection.execute(
@@ -1508,8 +1553,8 @@ class DeltaRepository:
                         """
                         INSERT INTO deposit_invoices(
                             user_id, idempotency_key, base_minor, exact_minor,
-                            expires_at, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?)
+                            expires_at, created_at, promo_code_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             user_id,
@@ -1518,6 +1563,7 @@ class DeltaRepository:
                             exact_minor,
                             expires_at,
                             now,
+                            promo_code_id,
                         ),
                     )
                 except aiosqlite.IntegrityError:
@@ -1527,6 +1573,9 @@ class DeltaRepository:
                     "exact_minor": exact_minor,
                     "expires_at": expires_at,
                     "reused": False,
+                    "promo_code_id": promo_code_id,
+                    "bonus_minor": bonus_minor,
+                    "effective_principal_preview_minor": base_minor + bonus_minor,
                 }
         raise RepositoryError("Could not reserve a unique deposit amount")
 
@@ -1601,23 +1650,81 @@ class DeltaRepository:
                 "UPDATE chain_deposits SET invoice_id = ?, matched = 1 WHERE id = ?",
                 (invoice["id"], chain_deposit_id),
             )
+
+            bonus_minor = 0
+            promo_code_id = invoice["promo_code_id"]
+            if promo_code_id is not None:
+                promo_code_id = int(promo_code_id)
+                promo_cursor = await connection.execute(
+                    "SELECT * FROM promo_codes WHERE id = ?", (promo_code_id,)
+                )
+                promo_row = await promo_cursor.fetchone()
+                if not promo_row or not promo_row["enabled"]:
+                    raise RepositoryError("Promo code is no longer available")
+                promo = dict(promo_row)
+                if promo["valid_from"] is not None and now < int(promo["valid_from"]):
+                    raise RepositoryError("Promo code is not yet active")
+                if promo["valid_until"] is not None and now > int(promo["valid_until"]):
+                    raise RepositoryError("Promo code has expired")
+                bonus_minor = compute_promo_bonus_minor(promo, int(invoice["base_minor"]))
+                if bonus_minor <= 0:
+                    raise RepositoryError("Promo code does not grant a bonus")
+
+            principal_minor = int(transfer.amount_minor) + bonus_minor
+
             cursor = await connection.execute(
                 """
                 INSERT INTO deposits(
                     user_id, invoice_id, principal_minor, payout_address,
-                    next_payout_at, opened_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    next_payout_at, opened_at, bonus_minor, promo_code_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     invoice["user_id"],
                     invoice["id"],
-                    transfer.amount_minor,
+                    principal_minor,
                     invoice["payout_address"],
                     now + 86_400,
                     now,
+                    bonus_minor,
+                    promo_code_id,
                 ),
             )
             deposit_id = int(cursor.lastrowid)
+
+            if promo_code_id is not None:
+                try:
+                    await connection.execute(
+                        """
+                        INSERT INTO promo_redemptions(
+                            promo_code_id, user_id, deposit_id, invoice_id,
+                            bonus_minor, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            promo_code_id,
+                            int(invoice["user_id"]),
+                            deposit_id,
+                            int(invoice["id"]),
+                            bonus_minor,
+                            now,
+                        ),
+                    )
+                except aiosqlite.IntegrityError as exc:
+                    raise RepositoryError(
+                        "Promo code already redeemed by this user"
+                    ) from exc
+                redeem_cursor = await connection.execute(
+                    """
+                    UPDATE promo_codes
+                    SET redemption_count = redemption_count + 1
+                    WHERE id = ? AND redemption_count < max_redemptions
+                    """,
+                    (promo_code_id,),
+                )
+                if not redeem_cursor.rowcount:
+                    raise RepositoryError("Promo code redemption limit reached")
+
             await connection.execute(
                 "INSERT INTO audit_events(event_type, details, created_at) "
                 "VALUES ('deposit_opened', ?, ?)",
