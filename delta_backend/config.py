@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     admin_ids: str = ""
     owner_ids: str = ""
     log_channel_id: int | None = None
+    ops_chat_id: int | None = None
+    ops_topic_id: int | None = None
     support_url: str = "https://t.me/your_support"
     chat_url: str = "https://t.me/your_chat"
 

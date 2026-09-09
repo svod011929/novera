@@ -584,6 +584,74 @@ class DeltaRepository:
         self.business = business
         self.connection: aiosqlite.Connection | None = None
         self._lock = asyncio.Lock()
+        self._ops_chat_notifier: object | None = None
+
+    def set_ops_chat_notifier(self, notifier: object | None) -> None:
+        self._ops_chat_notifier = notifier
+
+    def _schedule_ops_deposit(
+        self,
+        *,
+        telegram_id: int,
+        username: str | None,
+        first_name: str | None,
+        amount_minor: int,
+        deposit_id: int,
+        tx_hash: str | None = None,
+    ) -> None:
+        notifier = self._ops_chat_notifier
+        if notifier is None:
+            return
+        notify = getattr(notifier, "notify_deposit", None)
+        if notify is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(
+            notify(
+                telegram_id=telegram_id,
+                username=username,
+                first_name=first_name,
+                amount_minor=amount_minor,
+                deposit_id=deposit_id,
+                tx_hash=tx_hash,
+            )
+        )
+
+    def _schedule_ops_payout(
+        self,
+        *,
+        telegram_id: int,
+        username: str | None,
+        first_name: str | None,
+        amount_minor: int,
+        tx_hash: str,
+        kind: str,
+        subtype: str | None = None,
+    ) -> None:
+        notifier = self._ops_chat_notifier
+        if notifier is None:
+            return
+        notify = getattr(notifier, "notify_payout", None)
+        if notify is None:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(
+            notify(
+                telegram_id=telegram_id,
+                username=username,
+                first_name=first_name,
+                amount_minor=amount_minor,
+                tx_hash=tx_hash,
+                kind=kind,
+                subtype=subtype,
+            )
+        )
 
     async def connect(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -2377,6 +2445,8 @@ class DeltaRepository:
             raise RepositoryError("Recovery reason is required")
         clean_reason = clean_reason[:500]
         now = int(time.time())
+        ops_deposit: dict[str, object] | None = None
+        result: dict[str, object]
 
         async with self.transaction() as connection:
             cursor = await connection.execute(
@@ -2391,7 +2461,8 @@ class DeltaRepository:
 
             cursor = await connection.execute(
                 """
-                SELECT invoice.*, users.payout_address, users.blocked
+                SELECT invoice.*, users.payout_address, users.blocked,
+                       users.username, users.first_name
                 FROM deposit_invoices AS invoice
                 LEFT JOIN users ON users.telegram_id = invoice.user_id
                 WHERE invoice.id = ?
@@ -2624,7 +2695,7 @@ class DeltaRepository:
                     created_at=now,
                 )
 
-            return {
+            result = {
                 "deposit_id": deposit_id,
                 "invoice_id": int(invoice_id),
                 "chain_deposit_id": int(chain_deposit_id),
@@ -2633,9 +2704,26 @@ class DeltaRepository:
                 "tx_hash": tx_hash,
                 "reused": False,
             }
+            ops_deposit = {
+                "telegram_id": int(invoice["user_id"]),
+                "username": (
+                    None if invoice["username"] is None else str(invoice["username"])
+                ),
+                "first_name": (
+                    None if invoice["first_name"] is None else str(invoice["first_name"])
+                ),
+                "amount_minor": int(principal_minor),
+                "deposit_id": int(deposit_id),
+                "tx_hash": str(tx_hash),
+            }
+        if ops_deposit is not None:
+            self._schedule_ops_deposit(**ops_deposit)
+        return result
 
     async def apply_transfer(self, transfer: TransferEvent) -> dict[str, object]:
         now = int(time.time())
+        ops_deposit: dict[str, object] | None = None
+        matched_result: dict[str, object] | None = None
         async with self.transaction() as connection:
             try:
                 cursor = await connection.execute(
@@ -2663,7 +2751,7 @@ class DeltaRepository:
 
             cursor = await connection.execute(
                 """
-                SELECT invoice.*, users.payout_address
+                SELECT invoice.*, users.payout_address, users.username, users.first_name
                 FROM deposit_invoices invoice
                 JOIN users ON users.telegram_id = invoice.user_id
                 WHERE invoice.status = 'pending'
@@ -2855,7 +2943,19 @@ class DeltaRepository:
                     },
                     created_at=now,
                 )
-            return {
+            ops_deposit = {
+                "telegram_id": int(invoice["user_id"]),
+                "username": (
+                    None if invoice["username"] is None else str(invoice["username"])
+                ),
+                "first_name": (
+                    None if invoice["first_name"] is None else str(invoice["first_name"])
+                ),
+                "amount_minor": int(principal_minor),
+                "deposit_id": int(deposit_id),
+                "tx_hash": str(transfer.tx_hash),
+            }
+            matched_result = {
                 "duplicate": False,
                 "matched": True,
                 "user_id": int(invoice["user_id"]),
@@ -2866,6 +2966,11 @@ class DeltaRepository:
                 "promo_code_id": promo_code_id,
                 "promo_skipped_reason": promo_skip_reason,
             }
+        if ops_deposit is not None:
+            self._schedule_ops_deposit(**ops_deposit)
+        if matched_result is not None:
+            return matched_result
+        return {"duplicate": False, "matched": False}
 
     async def get_sync_height(self, key: str) -> int | None:
         connection = self._connection()
@@ -3234,8 +3339,18 @@ class DeltaRepository:
 
     async def mark_payout_confirmed(self, payout_id: int, tx_hash: str) -> dict[str, object] | None:
         now = int(time.time())
+        ops_payout: dict[str, object] | None = None
+        result: dict[str, object] | None
         async with self.transaction() as connection:
-            cursor = await connection.execute("SELECT * FROM payouts WHERE id = ?", (payout_id,))
+            cursor = await connection.execute(
+                """
+                SELECT payouts.*, users.username, users.first_name
+                FROM payouts
+                LEFT JOIN users ON users.telegram_id = payouts.user_id
+                WHERE payouts.id = ?
+                """,
+                (payout_id,),
+            )
             payout = await cursor.fetchone()
             if not payout:
                 return None
@@ -3341,8 +3456,30 @@ class DeltaRepository:
                     },
                     created_at=now,
                 )
+                ops_payout = {
+                    "telegram_id": int(payout["user_id"]),
+                    "username": (
+                        None if payout["username"] is None else str(payout["username"])
+                    ),
+                    "first_name": (
+                        None
+                        if payout["first_name"] is None
+                        else str(payout["first_name"])
+                    ),
+                    "amount_minor": int(payout["amount_minor"]),
+                    "tx_hash": str(tx_hash),
+                    "kind": str(payout["kind"] or ""),
+                    "subtype": (
+                        None
+                        if payout["subtype"] is None
+                        else str(payout["subtype"])
+                    ),
+                }
             cursor = await connection.execute("SELECT * FROM payouts WHERE id = ?", (payout_id,))
-            return dict(await cursor.fetchone())
+            result = dict(await cursor.fetchone())
+        if ops_payout is not None:
+            self._schedule_ops_payout(**ops_payout)
+        return result
 
     async def retry_payout(self, payout_id: int) -> bool:
         async with self.transaction() as connection:
@@ -4460,6 +4597,8 @@ class DeltaRepository:
             raise RepositoryError("Invalid investment operation ID")
         operation_key = f"admin-investment:{changed_by}:{user_id}:{clean_operation}"
         now = int(time.time())
+        ops_deposit: dict[str, object] | None = None
+        result: dict[str, object]
         async with self.transaction() as connection:
             cursor = await connection.execute(
                 """
@@ -4476,7 +4615,9 @@ class DeltaRepository:
                 result["reused"] = True
                 return result
             cursor = await connection.execute(
-                "SELECT payout_address, blocked FROM users WHERE telegram_id = ?", (user_id,)
+                "SELECT payout_address, blocked, username, first_name "
+                "FROM users WHERE telegram_id = ?",
+                (user_id,),
             )
             user = await cursor.fetchone()
             if user is None:
@@ -4545,7 +4686,19 @@ class DeltaRepository:
             cursor = await connection.execute("SELECT * FROM deposits WHERE id = ?", (deposit_id,))
             result = dict(await cursor.fetchone())
             result["reused"] = False
-            return result
+            ops_deposit = {
+                "telegram_id": int(user_id),
+                "username": None if user["username"] is None else str(user["username"]),
+                "first_name": (
+                    None if user["first_name"] is None else str(user["first_name"])
+                ),
+                "amount_minor": int(principal_minor),
+                "deposit_id": int(deposit_id),
+                "tx_hash": None,
+            }
+        if ops_deposit is not None:
+            self._schedule_ops_deposit(**ops_deposit)
+        return result
 
     async def admin_close_investment(
         self,

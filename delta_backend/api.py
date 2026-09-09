@@ -56,6 +56,7 @@ from .services.notifications import UserNotificationService
 from .services.deposit_monitor import DepositMonitor
 from .services.payouts import DailyPayoutService
 from .services.safety import PayoutCircuitBreaker, SafetyMonitor, SafetyRuntime
+from .services.ops_chat import OpsChatNotifier
 from .telegram_auth import TelegramAuthError, TelegramUser, validate_init_data
 # NOVERA admin inviter management
 # NOVERA real admin treasury test payouts
@@ -1082,6 +1083,10 @@ async def lifespan(application: FastAPI):
         )
     )
 
+    ops_chat = OpsChatNotifier(chain_settings, bot_token)
+    repository.set_ops_chat_notifier(ops_chat)
+    application.state.ops_chat = ops_chat
+
     if chain_settings.safety_monitor_enabled:
         safety_monitor = SafetyMonitor(
             repository,
@@ -1118,6 +1123,12 @@ async def lifespan(application: FastAPI):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        ops = getattr(application.state, "ops_chat", None)
+        if ops is not None:
+            try:
+                await ops.close()
+            except Exception:
+                pass
         if chain is not None:
             await chain.close()
         await repository.close()
