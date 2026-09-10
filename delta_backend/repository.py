@@ -141,7 +141,8 @@ CREATE TABLE IF NOT EXISTS payouts (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     status_changed_at INTEGER,
-    confirmed_at INTEGER
+    confirmed_at INTEGER,
+    replaced_tx_hashes TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_payouts_work ON payouts(status, id);
@@ -579,6 +580,33 @@ def campaign_promo_skip_reason(promo: dict[str, object] | None, now: int) -> str
     return None
 
 
+def parse_replaced_tx_hashes(raw: object) -> list[dict[str, object]]:
+    """Decode ``payouts.replaced_tx_hashes`` (JSON list of superseded transactions).
+
+    Each entry is ``{"tx_hash": str, "replaced_at": int}``. Malformed or empty
+    values decode to an empty list so a corrupt column can never block reconciliation.
+    """
+    if not raw:
+        return []
+    try:
+        data = json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    entries: list[dict[str, object]] = []
+    for item in data:
+        if not isinstance(item, dict) or not item.get("tx_hash"):
+            continue
+        entries.append(
+            {
+                "tx_hash": str(item["tx_hash"]),
+                "replaced_at": int(item.get("replaced_at") or 0),
+            }
+        )
+    return entries
+
+
 class DeltaRepository:
     def __init__(self, path: Path | str, business: MiniAppSettings) -> None:
         self.path = Path(path)
@@ -766,6 +794,10 @@ class DeltaRepository:
             await connection.execute(
                 "UPDATE payouts SET status_changed_at = updated_at "
                 "WHERE status_changed_at IS NULL"
+            )
+        if "replaced_tx_hashes" not in payout_columns:
+            await connection.execute(
+                "ALTER TABLE payouts ADD COLUMN replaced_tx_hashes TEXT"
             )
 
         # V8: convert only legacy referral payouts that are still safely queued
@@ -3729,13 +3761,49 @@ class DeltaRepository:
             self._schedule_ops_payout(**ops_payout)
         return result
 
+    async def replace_payout_transaction(
+        self,
+        payout_id: int,
+        tx_hash: str,
+        raw_transaction: str,
+    ) -> bool:
+        """Swap in a same-nonce replacement (gas bump) for a ``broadcast`` payout.
+
+        The superseded hash is appended to ``replaced_tx_hashes`` so reconciliation
+        can confirm whichever transaction the network eventually mines. Status stays
+        ``broadcast``; nonce, address and amount are never touched here.
+        """
+        now = int(time.time())
+        async with self.transaction() as connection:
+            cursor = await connection.execute(
+                "SELECT status, tx_hash, replaced_tx_hashes FROM payouts WHERE id = ?",
+                (payout_id,),
+            )
+            row = await cursor.fetchone()
+            if not row or str(row["status"]) != "broadcast":
+                return False
+            history = parse_replaced_tx_hashes(row["replaced_tx_hashes"])
+            if row["tx_hash"]:
+                history.append({"tx_hash": str(row["tx_hash"]), "replaced_at": now})
+            cursor = await connection.execute(
+                """
+                UPDATE payouts
+                SET tx_hash = ?, raw_transaction = ?, replaced_tx_hashes = ?,
+                    attempts = attempts + 1, last_error = NULL, updated_at = ?
+                WHERE id = ? AND status = 'broadcast'
+                """,
+                (tx_hash, raw_transaction, json.dumps(history), now, payout_id),
+            )
+            return bool(cursor.rowcount)
+
     async def retry_payout(self, payout_id: int) -> bool:
         async with self.transaction() as connection:
             cursor = await connection.execute(
                 """
                 UPDATE payouts
                 SET status = 'queued', tx_hash = NULL, raw_transaction = NULL,
-                    nonce = NULL, last_error = NULL, updated_at = ?, status_changed_at = ?
+                    nonce = NULL, replaced_tx_hashes = NULL, last_error = NULL,
+                    updated_at = ?, status_changed_at = ?
                 WHERE id = ? AND status = 'failed'
                 """,
                 (int(time.time()), int(time.time()), payout_id),
