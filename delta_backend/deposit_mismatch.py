@@ -44,3 +44,28 @@ def select_mismatch_candidate(
         )
     )
     return usable[0]
+
+
+def select_pending_invoice_for_unmatched_deposit(
+    invoices: list[dict], deposit: dict
+) -> dict | None:
+    """Pick the best pending invoice that near-misses this unmatched deposit."""
+    if int(deposit.get("matched") or 0) != 0:
+        return None
+    eligible: list[dict] = []
+    for invoice in invoices:
+        if select_mismatch_candidate(invoice, [deposit]) is None:
+            continue
+        eligible.append(invoice)
+    if not eligible:
+        return None
+    created = int(deposit["created_at"])
+    amount = int(deposit["amount_minor"])
+    eligible.sort(
+        key=lambda inv: (
+            abs(created - int(inv["created_at"])),
+            abs(amount - int(inv["exact_minor"])),
+            int(inv["id"]),
+        )
+    )
+    return eligible[0]

@@ -4,7 +4,11 @@ import pytest
 
 from delta_backend.amounts import usdt_to_minor
 from delta_backend.api_settings import MiniAppSettings
-from delta_backend.deposit_mismatch import select_mismatch_candidate
+from delta_backend.deposit_mismatch import (
+    select_mismatch_candidate,
+    select_pending_invoice_for_unmatched_deposit,
+)
+from delta_backend.models import TransferEvent
 from delta_backend.repository import DeltaRepository
 
 WALLET = "0x0000000000000000000000000000000000000002"
@@ -65,6 +69,76 @@ def test_prefer_closest_created_at_then_smaller_delta():
     assert select_mismatch_candidate(invoice, candidates)["id"] == 6
 
 
+def test_reverse_select_picks_near_miss_pending_invoice():
+    deposit = {
+        "id": 9,
+        "amount_minor": 100_370000 + usdt_to_minor("1"),
+        "created_at": 1010,
+        "matched": 0,
+    }
+    invoices = [
+        {
+            "id": 1,
+            "user_id": 10,
+            "created_at": 1000,
+            "expires_at": 5000,
+            "base_minor": 100_000000,
+            "exact_minor": 100_370000,
+        },
+        {
+            "id": 2,
+            "user_id": 11,
+            "created_at": 1000,
+            "expires_at": 5000,
+            "base_minor": 50_000000,
+            "exact_minor": 50_120000,
+        },
+    ]
+    chosen = select_pending_invoice_for_unmatched_deposit(invoices, deposit)
+    assert chosen is not None
+    assert chosen["id"] == 1
+
+
+def test_reverse_select_none_when_far_or_matched():
+    deposit = {"id": 9, "amount_minor": 10_000000, "created_at": 1010, "matched": 0}
+    invoices = [
+        {
+            "id": 1,
+            "user_id": 10,
+            "created_at": 1000,
+            "expires_at": 5000,
+            "base_minor": 100_000000,
+            "exact_minor": 100_370000,
+        },
+    ]
+    assert select_pending_invoice_for_unmatched_deposit(invoices, deposit) is None
+    matched = {"id": 9, "amount_minor": 100_370000, "created_at": 1010, "matched": 1}
+    assert select_pending_invoice_for_unmatched_deposit(invoices, matched) is None
+
+
+def test_reverse_select_prefers_closer_invoice_time():
+    deposit = {"id": 9, "amount_minor": 100_000000, "created_at": 1100, "matched": 0}
+    invoices = [
+        {
+            "id": 1,
+            "user_id": 10,
+            "created_at": 1000,
+            "expires_at": 5000,
+            "base_minor": 100_000000,
+            "exact_minor": 100_370000,
+        },
+        {
+            "id": 2,
+            "user_id": 11,
+            "created_at": 1080,
+            "expires_at": 5000,
+            "base_minor": 100_000000,
+            "exact_minor": 100_370000,
+        },
+    ]
+    assert select_pending_invoice_for_unmatched_deposit(invoices, deposit)["id"] == 2
+
+
 async def test_get_user_invoice_mismatch_hint(tmp_path) -> None:
     repo = DeltaRepository(tmp_path / "mismatch.sqlite3", MiniAppSettings(_env_file=None))
     await repo.connect()
@@ -104,5 +178,76 @@ async def test_get_user_invoice_mismatch_hint(tmp_path) -> None:
         assert row["mismatch"] is not None
         assert row["mismatch"]["tx_hash"] == TX_HASH
         assert row["credited"] is False
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_apply_transfer_queues_near_miss_telegram_once(tmp_path) -> None:
+    repo = DeltaRepository(
+        tmp_path / "near-miss-dm.sqlite3", MiniAppSettings(_env_file=None)
+    )
+    await repo.connect()
+    try:
+        await repo.ensure_user(1, "u1", "One", "ru")
+        await repo.set_wallet(1, WALLET)
+        base_minor = usdt_to_minor(10)
+        inv = await repo.create_invoice(1, base_minor, idempotency_key="near-miss-dm-1")
+        invoice_id = int(inv["invoice_id"])
+        exact_minor = int(inv["exact_minor"])
+        near_minor = exact_minor + usdt_to_minor("1")
+        transfer = TransferEvent(
+            chain_id=97,
+            tx_hash=TX_HASH,
+            log_index=0,
+            block_number=42,
+            from_address=WALLET,
+            to_address="0x0000000000000000000000000000000000000001",
+            amount_atomic=near_minor * 10**12,
+            amount_minor=near_minor,
+        )
+        result = await repo.apply_transfer(transfer)
+        assert result == {"duplicate": False, "matched": False}
+
+        connection = repo._connection()
+        async with repo._lock:
+            cursor = await connection.execute(
+                "SELECT event_type, dedupe_key, user_id, title FROM user_notifications"
+            )
+            rows = [dict(row) for row in await cursor.fetchall()]
+        assert len(rows) == 1
+        assert rows[0]["event_type"] == "deposit_amount_mismatch"
+        assert rows[0]["user_id"] == 1
+        assert rows[0]["title"] == "Сумма перевода не совпала"
+        assert rows[0]["dedupe_key"] == f"deposit-mismatch:{invoice_id}:1"
+
+        duplicate = await repo.apply_transfer(transfer)
+        assert duplicate == {"duplicate": True, "matched": False}
+        async with repo._lock:
+            cursor = await connection.execute(
+                "SELECT COUNT(*) AS value FROM user_notifications"
+            )
+            count = int((await cursor.fetchone())["value"])
+        assert count == 1
+
+        far = TransferEvent(
+            chain_id=97,
+            tx_hash="0x" + "c" * 64,
+            log_index=1,
+            block_number=43,
+            from_address=WALLET,
+            to_address="0x0000000000000000000000000000000000000001",
+            amount_atomic=usdt_to_minor("50") * 10**12,
+            amount_minor=usdt_to_minor("50"),
+        )
+        far_result = await repo.apply_transfer(far)
+        assert far_result == {"duplicate": False, "matched": False}
+        async with repo._lock:
+            cursor = await connection.execute(
+                "SELECT COUNT(*) AS value FROM user_notifications "
+                "WHERE event_type = 'deposit_amount_mismatch'"
+            )
+            mismatch_count = int((await cursor.fetchone())["value"])
+        assert mismatch_count == 1
     finally:
         await repo.close()

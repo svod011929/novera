@@ -16,6 +16,7 @@ from .deposit_mismatch import (
     MISMATCH_LOOKAHEAD_AFTER_EXPIRY_SECONDS,
     MISMATCH_LOOKBACK_SECONDS,
     select_mismatch_candidate,
+    select_pending_invoice_for_unmatched_deposit,
 )
 from .models import TransferEvent
 from .telegram_auth import TelegramUser
@@ -2935,6 +2936,58 @@ class DeltaRepository:
                     "tx_hash": str(transfer.tx_hash),
                 }
                 unmatched_result = {"duplicate": False, "matched": False}
+                cursor = await connection.execute(
+                    """
+                    SELECT invoice.*
+                    FROM deposit_invoices invoice
+                    JOIN users ON users.telegram_id = invoice.user_id
+                    WHERE invoice.status = 'pending'
+                      AND invoice.expires_at >= ?
+                      AND users.blocked = 0
+                    """,
+                    (now,),
+                )
+                pending_invoices = [dict(row) for row in await cursor.fetchall()]
+                chosen = select_pending_invoice_for_unmatched_deposit(
+                    pending_invoices,
+                    {
+                        "id": int(chain_deposit_id),
+                        "amount_minor": int(transfer.amount_minor),
+                        "created_at": int(now),
+                        "matched": 0,
+                    },
+                )
+                if chosen is not None:
+                    expected = minor_to_text(int(chosen["exact_minor"]), trim=False)
+                    observed = minor_to_text(int(transfer.amount_minor), trim=False)
+                    invoice_id = int(chosen["id"])
+                    await self._queue_notification(
+                        connection,
+                        user_id=int(chosen["user_id"]),
+                        category="deposit",
+                        event_type="deposit_amount_mismatch",
+                        title="Сумма перевода не совпала",
+                        body=(
+                            f"Ожидали {expected} USDT, в сети {observed} USDT. "
+                            "Нужна точная сумма с хвостом."
+                        ),
+                        telegram_html=(
+                            "⚠️ <b>Сумма перевода не совпала</b>\n\n"
+                            f"Ожидали: <b>{expected} USDT</b>\n"
+                            f"В сети: <b>{observed} USDT</b>\n\n"
+                            "Нужна точная сумма с хвостом из заявки.\n"
+                            "Если уже отправили — напишите в поддержку."
+                        ),
+                        dedupe_key=(
+                            f"deposit-mismatch:{invoice_id}:{int(chain_deposit_id)}"
+                        ),
+                        data={
+                            "target_view": "wallet",
+                            "invoice_id": invoice_id,
+                            "chain_deposit_id": int(chain_deposit_id),
+                        },
+                        created_at=now,
+                    )
             else:
                 await connection.execute(
                     """
