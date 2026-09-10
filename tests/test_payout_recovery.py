@@ -674,6 +674,82 @@ async def test_gas_bump_confirms_replacement_when_it_mines(tmp_path: Path) -> No
         await repo.close()
 
 
+# --- gas price floor -----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_signing_raises_network_gas_price_to_floor(tmp_path: Path) -> None:
+    repo = await open_repository(tmp_path, "gas-floor")
+    try:
+        await insert_payout(repo, "p0")
+        chain = FakeChain()
+        chain.gas = GWEI // 20  # BSC quote that stalled in mempools for 10+ minutes
+        service = make_service(repo, chain, payout_gas_price_floor_wei=GWEI)
+
+        await service.run_once()
+        assert chain.sign_calls[0]["gas_price"] == GWEI
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_gas_price_floor_never_lowers_a_higher_network_price(tmp_path: Path) -> None:
+    repo = await open_repository(tmp_path, "gas-floor-high")
+    try:
+        await insert_payout(repo, "p0")
+        chain = FakeChain()
+        chain.gas = 3 * GWEI
+        service = make_service(repo, chain, payout_gas_price_floor_wei=GWEI)
+
+        await service.run_once()
+        assert chain.sign_calls[0]["gas_price"] == 3 * GWEI
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_missing_floor_setting_keeps_network_price(tmp_path: Path) -> None:
+    repo = await open_repository(tmp_path, "gas-floor-absent")
+    try:
+        await insert_payout(repo, "p0")
+        chain = FakeChain()
+        chain.gas = GWEI // 20
+        service = make_service(repo, chain)
+
+        await service.run_once()
+        assert chain.sign_calls[0]["gas_price"] == GWEI // 20
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_gas_bump_starts_from_floor_when_network_price_is_low(tmp_path: Path) -> None:
+    repo = await open_repository(tmp_path, "gas-floor-bump")
+    try:
+        old_hash = "0x" + "a" * 64
+        await insert_payout(
+            repo,
+            "bcast",
+            status="broadcast",
+            nonce=5,
+            tx_hash=old_hash,
+            raw_transaction="0xoldraw",
+            status_changed_at=int(time.time()) - 600,
+        )
+        chain = FakeChain()
+        chain.latest = 5
+        chain.gas = GWEI // 20
+        chain.gas_prices[old_hash] = GWEI // 20  # legacy row signed before the floor existed
+        service = make_service(repo, chain, payout_gas_price_floor_wei=GWEI)
+
+        await service.run_once()
+        # max(floor * 1.5, old * 1.125) — the floor, not the 0.05 gwei quote, drives the bump.
+        assert chain.sign_calls[0]["gas_price"] == GWEI * 3 // 2
+        assert chain.sign_calls[0]["nonce"] == 5
+    finally:
+        await repo.close()
+
+
 # --- repository --------------------------------------------------------------------------
 
 

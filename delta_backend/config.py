@@ -142,6 +142,11 @@ class Settings(BaseSettings):
     deposit_scan_degraded_seconds: int = 4
     payout_interval_seconds: int = 3
     payout_batch_size: int = 8
+    # Нижний порог цены газа для подписи выплат. Публичные ноды BSC отдают
+    # eth_gasPrice = 0.05 gwei, но переводы ровно по этому порогу зависали в
+    # мемпуле на 10+ минут (инцидент 2026-09-10); 1 gwei стоит ~0.00006 BNB за
+    # перевод и майнится за секунды. 0 отключает порог (только сетевая цена).
+    payout_gas_price_floor_wei: int = 1_000_000_000
     block_explorer_tx_url: str = "https://bscscan.com/tx/{tx_hash}"
     minimum_native_balance_wei: int = 1_000_000_000_000_000
     minimum_token_balance_usdt: Decimal = Decimal("1")
@@ -235,6 +240,8 @@ class Settings(BaseSettings):
             raise ValueError("минимальные балансы кошелька не могут быть отрицательными")
         if self.safety_min_native_balance_wei < 0:
             raise ValueError("SAFETY_MIN_NATIVE_BALANCE_WEI не может быть отрицательным")
+        if self.payout_gas_price_floor_wei < 0:
+            raise ValueError("PAYOUT_GAS_PRICE_FLOOR_WEI не может быть отрицательным")
         positive_safety = {
             "SAFETY_CHECK_INTERVAL_SECONDS": self.safety_check_interval_seconds,
             "SAFETY_STARTUP_GRACE_SECONDS": self.safety_startup_grace_seconds,

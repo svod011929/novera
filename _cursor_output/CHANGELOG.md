@@ -1,5 +1,25 @@
 # CHANGELOG (Cursor working notes)
 
+## 2026-09-10 — Payout gas price floor (follow-up to the PAYOUT_STUCK incident)
+
+Live observation: transfers signed at the BSC quote of 0.05 gwei sat in public
+mempools for 10+ minutes (#39, #41, #42); same-nonce replacements at 1 gwei mined
+within seconds. Cost of the floor: ~0.00006 BNB per transfer.
+
+- `delta_backend/config.py`: new `payout_gas_price_floor_wei` (env
+  `PAYOUT_GAS_PRICE_FLOOR_WEI`, default 1 gwei, `0` disables); negative values
+  rejected at settings validation.
+- `delta_backend/services/payouts.py`: `_effective_gas_price()` =
+  `max(network, floor)`; applied to the batch preflight price used for new
+  signatures and to the base price of same-nonce gas bumps. A higher network
+  price is never lowered. Absent setting (tests' `SimpleNamespace`) → floor 0.
+- Tests: +4 in `tests/test_payout_recovery.py` (floor applied, higher network
+  price kept, absent setting keeps network price, bump starts from the floor).
+- Ops (VPS, not in repo): `BSC_RPC_FALLBACK_URL=https://bsc-dataseed.binance.org/`
+  added to the live `.env` so rebroadcast/signing reach a well-propagating node
+  when the primary RPC pool drops transactions.
+- No change to amounts, schedule, nonce source or deposit logic.
+
 ## 2026-09-10 — Payout worker: delegated treasury serialization + dropped-tx recovery
 
 Motivated by the 2026-09-10 BSC mainnet incident (EIP-7702 delegated treasury:

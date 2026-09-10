@@ -1,5 +1,19 @@
 # TEST_REPORT
 
+## Payout gas price floor — 2026-09-10
+
+- `python -m pytest -q` (Python 3.12, local) — **240 passed, 0 failed**
+  (236 after PR #2 merge + 4 new gas-floor cases).
+- Settings validation checked by hand: `PAYOUT_GAS_PRICE_FLOOR_WEI=-1` →
+  `ValidationError "PAYOUT_GAS_PRICE_FLOOR_WEI не может быть отрицательным"`;
+  `250000000` → accepted.
+- PR #2 branch re-verified locally before merge: 236 passed (independent of the
+  cloud run).
+- Live validation of the incident path (manual, before this deploy): same-nonce
+  replacements at 1 gwei for #39 (nonce 49), #41 (nonce 51) and a fresh
+  nonce-52 transaction for #42 all mined within ~6 s; 0.05 gwei transactions
+  had been pending 10+ minutes.
+
 ## Payout worker: delegated treasury + dropped-tx recovery — 2026-09-10
 
 - `bash scripts/verify_workspace.sh` (compileall + `bash -n` + pytest) — PASS

@@ -60,6 +60,17 @@ class DailyPayoutService:
         stuck_seconds = int(getattr(self.settings, "safety_payout_stuck_seconds", 900))
         return max(30.0, stuck_seconds / 2)
 
+    def _effective_gas_price(self, network_gas_price: int) -> int:
+        """Network gas price raised to the configured floor.
+
+        BSC quotes 0.05 gwei, yet transfers at exactly that price were observed to sit
+        unmined for 10+ minutes; the floor (default 1 gwei) keeps payouts moving while
+        never lowering a higher network price. It applies to both new signatures and
+        same-nonce gas bumps.
+        """
+        floor = max(0, int(getattr(self.settings, "payout_gas_price_floor_wei", 0)))
+        return max(int(network_gas_price), floor)
+
     def _forget(self, payout_id: int) -> None:
         self._missing_streak.pop(payout_id, None)
         self._last_gas_bump_attempt_at.pop(payout_id, None)
@@ -119,7 +130,7 @@ class DailyPayoutService:
         # Shared preflight once per batch instead of 2 balance + gas calls per payout.
         try:
             native_balance, token_balance = await self.chain.signer_balances()
-            gas_price = await self.chain.gas_price()
+            gas_price = self._effective_gas_price(await self.chain.gas_price())
             pending_nonce = await self.chain.pending_nonce() if in_flight else None
         except Exception as exc:
             if self.circuit is not None:
@@ -382,7 +393,7 @@ class DailyPayoutService:
             # Not in any pool right now: the rebroadcast above re-seeds it; bump only a
             # transaction the network can actually see and replace.
             return
-        current_gas_price = await self.chain.gas_price()
+        current_gas_price = self._effective_gas_price(await self.chain.gas_price())
         new_gas_price = max(int(current_gas_price) * 3 // 2, int(old_gas_price) * 9 // 8)
         signed = await self.chain.sign_token_transfer(
             str(payout["address"]),
