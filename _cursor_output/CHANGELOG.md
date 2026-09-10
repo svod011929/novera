@@ -1,5 +1,42 @@
 # CHANGELOG (Cursor working notes)
 
+## 2026-09-10 — Payout worker: delegated treasury serialization + dropped-tx recovery
+
+Motivated by the 2026-09-10 BSC mainnet incident (EIP-7702 delegated treasury:
+in-flight limit / gapped-nonce rejections, a broadcast that never propagated,
+duplicate-nonce rows after manual retry, a 0.05 gwei transaction that never mined).
+
+- `delta_backend/services/blockchain.py`: `is_delegated()` (eth_getCode prefix
+  `0xef0100`, cached 180 s), `latest_nonce()`, `pending_nonce()`,
+  `transaction_exists()`, `transaction_gas_price()` (fail-closed across endpoints
+  like `receipt_status`), `sign_token_transfer(nonce=…)` for same-nonce
+  replacements only. `receipt_status` semantics unchanged.
+- `delta_backend/services/payouts.py`:
+  - (A) delegated treasury → in-flight `signed+broadcast` capped at 1; batch
+    behaviour unchanged for plain EOAs; delegation check failure fails safe to 1.
+    `in-flight transaction limit reached` / `gapped-nonce` are transient in
+    `_broadcast` (row stays `signed`, error recorded, no failure).
+  - (B) `broadcast` rows without a receipt for ≥15 s re-send the stored
+    `raw_transaction` (same bytes/nonce, never re-signed; `already known` /
+    `nonce too low` are fine). When on-chain nonce > payout nonce and the hash is
+    unknown to every endpoint for 3 consecutive passes → `failed` with an explicit
+    reason for admin retry. Never failed while latest nonce == payout nonce.
+  - (C) before signing, pause when any in-flight row holds a nonce ≥ the RPC
+    pending nonce (duplicate-nonce guard); comment documents why delegated
+    treasuries cannot produce duplicates under (A).
+  - (D) stalled pending tx older than `safety_payout_stuck_seconds/2` with latest
+    nonce == payout nonce → same-nonce replacement at
+    `max(current×1.5, old×1.125)`, at most 3 bumps per payout, row stays
+    `broadcast`; previous hashes kept so reconcile confirms whichever mines.
+- `delta_backend/repository.py`: additive nullable `payouts.replaced_tx_hashes`
+  (JSON, migration via `ALTER TABLE`), `replace_payout_transaction()`
+  (broadcast rows only, atomic), `retry_payout` also clears the new column,
+  `parse_replaced_tx_hashes()` helper.
+- Tests: `tests/test_payout_recovery.py` (25 cases, fake chain + real SQLite
+  repository); `tests/test_safety.py` fake gained `is_delegated`.
+- No deposit logic, economics, payout amounts/schedule or nonce source for new
+  payouts changed. Production not contacted.
+
 ## 2026-09-07 — Branded bootstrap installer profiles
 
 - Added `_owner_inputs/BRAND_PROFILES/` (`novera` + `_template`) with non-secret

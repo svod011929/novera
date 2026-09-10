@@ -1,5 +1,20 @@
 # TEST_REPORT
 
+## Payout worker: delegated treasury + dropped-tx recovery — 2026-09-10
+
+- `bash scripts/verify_workspace.sh` (compileall + `bash -n` + pytest) — PASS
+- `python -m pytest -q` — **236 passed, 0 failed** (baseline on `main`
+  a9a44a5: 211 passed; +25 new in `tests/test_payout_recovery.py`)
+- Mutation check of the new tests (each mutation applied alone, then reverted):
+  removing the delegated cap → 2 failures; removing the 3-pass streak → 2
+  failures; classifying the delegated txpool messages as deterministic → 2
+  failures; disabling the pending-nonce guard → 1 failure; failing while
+  latest nonce == payout nonce → 5 failures. All caught.
+- `ruff check` on touched files: no new rule categories versus `main`
+  (pre-existing `BLE001`/`I001`/`ISC004` patterns only; new test file clean).
+- Not performed: live RPC / VPS validation (no access by design); the delegated
+  txpool behaviour is asserted through the recorded `-32000` messages.
+
 ## Branded bootstrap profiles + wizard — 2026-09-07/08
 
 - `python -m pytest -q` — **99 passed, 1 failed**. The 1 failure
