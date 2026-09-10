@@ -115,6 +115,9 @@ async def test_safety_state_and_payout_metrics(tmp_path: Path):
 
 
 class NoFundsChain:
+    async def is_delegated(self):
+        return False
+
     async def signer_balances(self):
         return (10**18, 0)
 

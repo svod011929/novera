@@ -61,6 +61,9 @@ ERC20_ABI: list[dict[str, Any]] = [
 
 WS_BACKOFF_SECONDS = (1, 2, 5, 10, 20, 30)
 _URL_RE = re.compile(r"(?i)\b(?:https?|wss?)://[^\s'\"<>]+")
+# EIP-7702 delegation designator: the account code is 0xef0100 || delegate address.
+EIP7702_DELEGATION_PREFIX = "0xef0100"
+DELEGATION_CACHE_SECONDS = 180.0
 
 
 def _hex0x(value: bytes | str | HexBytes) -> str:
@@ -144,6 +147,7 @@ class EvmTokenClient:
             for url in urls
         ]
         self._preferred_http_index = 0
+        self._delegation_cache: tuple[bool, float] | None = None
         self._configured_log_chunk = max(1, int(settings.scan_block_chunk))
         self._adaptive_log_chunk = self._configured_log_chunk
         logger.info(
@@ -409,6 +413,45 @@ class EvmTokenClient:
             lambda w3: self._contract(w3).functions.balanceOf(checksum).call(),
         )
 
+    async def is_delegated(self) -> bool:
+        """Return True when the treasury is an EIP-7702 delegated EOA.
+
+        BSC txpool allows a delegated account only one in-flight transaction and
+        rejects gapped nonces, so callers must serialize signing. The answer is
+        cached for a few minutes; a delegation change is rare and operator-driven.
+        """
+        now = time.time()
+        if (
+            self._delegation_cache is not None
+            and (now - self._delegation_cache[1]) < DELEGATION_CACHE_SECONDS
+        ):
+            return self._delegation_cache[0]
+        code = await self._call_http(
+            "eth_getCode",
+            lambda w3: w3.eth.get_code(self.treasury_address),
+        )
+        delegated = _hex0x(code).lower().startswith(EIP7702_DELEGATION_PREFIX)
+        self._delegation_cache = (delegated, now)
+        return delegated
+
+    async def latest_nonce(self) -> int:
+        """Nonce of the treasury as of the latest block (count of mined transactions)."""
+        return int(
+            await self._call_http(
+                "eth_getTransactionCount latest",
+                lambda w3: w3.eth.get_transaction_count(self.treasury_address, "latest"),
+            )
+        )
+
+    async def pending_nonce(self) -> int:
+        """Nonce the RPC would assign next, including its own pending pool."""
+        return int(
+            await self._call_http(
+                "eth_getTransactionCount pending",
+                lambda w3: w3.eth.get_transaction_count(self.treasury_address, "pending"),
+            )
+        )
+
     async def eth_call(
         self,
         transaction: Mapping[str, Any],
@@ -564,16 +607,28 @@ class EvmTokenClient:
         amount_minor: int,
         *,
         gas_price: int | None = None,
+        nonce: int | None = None,
     ) -> SignedTransfer:
+        """Sign an ERC-20 transfer.
+
+        ``nonce`` is only meant for same-nonce replacements (gas bump) of a
+        transaction that is still pending; new payouts must keep using the RPC
+        pending nonce so the existing nonce flow stays untouched.
+        """
         if self.account is None:
             raise BlockchainConfigurationError("payout signing key is missing")
         destination = Web3.to_checksum_address(address)
         value_atomic = minor_to_atomic(amount_minor, self.settings.token_decimals)
         fixed_gas_price = int(gas_price) if gas_price is not None else None
+        fixed_nonce = int(nonce) if nonce is not None else None
 
         async def build(w3: AsyncWeb3) -> SignedTransfer:
             contract = self._contract(w3)
-            nonce = await w3.eth.get_transaction_count(self.account.address, "pending")
+            nonce = (
+                fixed_nonce
+                if fixed_nonce is not None
+                else await w3.eth.get_transaction_count(self.account.address, "pending")
+            )
             function = contract.functions.transfer(destination, value_atomic)
             gas_estimate = await function.estimate_gas({"from": self.account.address})
             price = fixed_gas_price if fixed_gas_price is not None else int(await w3.eth.gas_price)
@@ -636,6 +691,60 @@ class EvmTokenClient:
                 "eth_getTransactionReceipt failed: " + "; ".join(failures)
             )
         return None
+
+    async def _lookup_transaction(self, tx_hash: str) -> Mapping[str, Any] | None:
+        """eth_getTransactionByHash across endpoints.
+
+        Returns the transaction when any endpoint knows it (pending or mined) and
+        None only when every endpoint answered "not found". Same fail-closed rule
+        as receipt_status: an endpoint error without a positive answer raises, so a
+        flaky RPC can never be mistaken for a dropped transaction.
+        """
+        failures: list[str] = []
+        not_found = 0
+        for index in self._http_order():
+            label = "primary" if index == 0 else "fallback"
+            try:
+                transaction = await self._http_clients[index].eth.get_transaction(tx_hash)
+            except TransactionNotFound:
+                not_found += 1
+                continue
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                safe = self.safe_error(exc)
+                failures.append(f"{label}: {safe}")
+                logger.warning(
+                    "BSC HTTPS RPC %s failed during eth_getTransactionByHash (%s)",
+                    label,
+                    safe,
+                )
+                continue
+            if transaction is None:
+                not_found += 1
+                continue
+            self._preferred_http_index = index
+            return transaction
+
+        if not_found == len(self._http_clients):
+            return None
+        raise BlockchainRpcError(
+            "eth_getTransactionByHash failed: " + "; ".join(failures)
+        )
+
+    async def transaction_exists(self, tx_hash: str) -> bool:
+        """True when some endpoint still knows the transaction (pool or chain)."""
+        return await self._lookup_transaction(tx_hash) is not None
+
+    async def transaction_gas_price(self, tx_hash: str) -> int | None:
+        """Gas price of a known transaction, or None when no endpoint knows it."""
+        transaction = await self._lookup_transaction(tx_hash)
+        if transaction is None:
+            return None
+        gas_price = transaction.get("gasPrice")
+        if gas_price is None:
+            gas_price = transaction.get("maxFeePerGas")
+        return _as_int(gas_price) if gas_price is not None else None
 
     async def signer_balances(self) -> tuple[int, int]:
         if self.account is None:
